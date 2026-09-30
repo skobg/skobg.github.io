@@ -73,9 +73,9 @@
       font-size: 16px;
       line-height: 1.4;
       -webkit-font-smoothing: antialiased;
-      min-height: 100vh;
-      padding: max(20px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
-               max(28px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+      height: 100vh; height: 100dvh; overflow: hidden;
+      padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+               max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
       -webkit-user-select: none; user-select: none;
     }
     input { -webkit-user-select: text; user-select: text; }
@@ -87,61 +87,93 @@
     button:disabled { opacity: 0.45; cursor: default; }
     button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+    /* One screen, no page scrolling. Wide: [clock+weather / radar] | lights.
+       Narrow: clock+weather, lights, radar stacked; the radar takes what is left. */
     .wrap {
-      max-width: 1180px; margin: 0 auto;
-      display: grid; gap: 20px;
-      grid-template-columns: minmax(0, 1fr);
+      height: 100%; max-width: 1600px; margin: 0 auto;
+      display: grid; gap: 12px;
+      grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+      grid-template-rows: minmax(0, 1fr);
     }
-    @media (min-width: 960px) {
-      .wrap { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); align-items: start; }
-      .side { position: sticky; top: 20px; }
-    }
-    .side, .main { display: grid; gap: 20px; min-width: 0; }
-    /* phone / portrait: clock, then lights, then radar */
-    @media (max-width: 959px) {
+    .side, .main { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; }
+    .side > .hero { flex: none; }
+    #radar-card { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    #radar-card .map { flex: 1; height: auto; min-height: 140px; }
+    #app { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    #app:not(.hidden) { display: flex; }
+    @media (max-width: 899px), (orientation: portrait) {
+      .wrap { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); }
       .side { display: contents; }
       .hero { order: 1; } .main { order: 2; } #radar-card { order: 3; }
+      .main { min-height: auto; }
+      #app { flex: none; }
+    }
+    @media (max-width: 599px) {
+      .lights-head > div:first-child { display: none; }   /* no room for the title on phones */
       .pill-row { width: 100%; flex-wrap: nowrap; gap: 6px; }
       .pill:not(.icon) { flex: 1; justify-content: center; padding: 0 12px; }
       .pill:not(.icon) svg { display: none; }
+    }
+    @media (max-height: 760px) and (max-width: 599px) {
+      .legend { display: none; }
+      #radar-card .map { min-height: 80px; }
+      .radar-head { margin-bottom: 6px; }
+    }
+    /* too short for one screen (phone in landscape): let the page scroll */
+    @media (max-height: 520px) {
+      body { height: auto; overflow: auto; }
+      .wrap { height: auto; grid-template-rows: auto; }
+      #radar-card .map { flex: none; height: 320px; }
     }
 
     .card {
       min-width: 0;
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 24px;
-      padding: 20px;
+      border-radius: 22px;
+      padding: 16px;
       box-shadow: var(--shadow);
       -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
     }
 
     /* ── clock + current weather ── */
-    .hero { padding: 24px; }
-    .time {
-      font-size: clamp(72px, 17vw, 128px); font-weight: 200; letter-spacing: -0.04em;
-      line-height: 0.95; font-variant-numeric: tabular-nums;
+    .hero {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px 20px; flex-wrap: wrap;
+      padding: 14px 18px; container-type: inline-size;
     }
-    .time .sec { font-size: 0.3em; font-weight: 300; color: var(--muted); letter-spacing: 0; margin-left: 6px; }
-    .date { font-size: 18px; color: var(--muted); margin-top: 8px; }
+    .time {
+      font-size: clamp(44px, min(9vw, 8vh), 72px); font-weight: 200; letter-spacing: -0.04em;
+      line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap;
+    }
+    .time .sec { font-size: 0.34em; font-weight: 300; color: var(--muted); letter-spacing: 0; margin-left: 4px; }
+    .date { font-size: 14px; color: var(--muted); margin-top: 4px; }
 
-    .now { display: flex; align-items: center; gap: 16px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); }
-    .now .big-icon { width: 72px; height: 72px; flex: none; }
-    .now .temp { font-size: 52px; font-weight: 300; letter-spacing: -0.03em; line-height: 1; }
-    .now .desc { font-size: 16px; }
-    .now .meta { font-size: 13px; color: var(--muted); margin-top: 2px; }
+    .wx { display: flex; flex-direction: column; align-items: flex-end; min-width: 0; }
+    .now { display: flex; align-items: center; gap: 12px; }
+    .now .big-icon { width: 48px; height: 48px; flex: none; }
+    .now .temp { font-size: 40px; font-weight: 300; letter-spacing: -0.03em; line-height: 1; }
+    .now .desc { font-size: 15px; }
+    .now .meta { font-size: 12px; color: var(--muted); margin-top: 1px; }
+    @container (max-width: 520px) {
+      .now .meta.extra { display: none; }
+      .now { gap: 8px; }
+      .now .big-icon { width: 38px; height: 38px; }
+      .now .temp { font-size: 32px; }
+      .time { font-size: 46px; }
+      .date { font-size: 13px; }
+    }
     .place {
-      display: inline-flex; align-items: center; gap: 6px; margin-top: 14px;
-      font-size: 14px; color: var(--muted); padding: 8px 12px; margin-left: -12px; border-radius: 999px;
-      min-height: 40px;
+      display: inline-flex; align-items: center; gap: 6px; margin-top: 2px;
+      font-size: 13px; color: var(--muted); padding: 6px 10px; margin-right: -10px; border-radius: 999px;
+      min-height: 36px;
     }
     .place:active { background: var(--surface-2); }
     .place svg { width: 16px; height: 16px; }
 
     /* ── radar ── */
     .section-title { font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-    .radar-card { padding: 16px; }
-    .radar-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 0 4px 12px; }
+    .radar-card { padding: 12px; }
+    .radar-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 0 4px 10px; }
     .tabs { display: inline-flex; background: var(--surface-2); border-radius: 999px; padding: 4px; }
     .tabs button { height: 40px; padding: 0 18px; border-radius: 999px; font-size: 14px; font-weight: 600; color: var(--muted); }
     .tabs button.sel { background: var(--solid); color: var(--ink); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
@@ -151,7 +183,7 @@
     }
     #radar-map, #lightning-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
     .map .wx-empty { padding: 16px; }
-    .radar-bar { display: flex; align-items: center; gap: 12px; margin: 10px 4px 0; }
+    .radar-bar { display: flex; align-items: center; gap: 12px; margin: 6px 4px 0; }
     .play {
       width: 48px; height: 48px; border-radius: 50%; flex: none;
       background: var(--accent); color: #fff; display: grid; place-items: center;
@@ -190,8 +222,9 @@
     .error { color: var(--err); font-size: 14px; min-height: 1.2em; }
 
     /* ── lights ── */
+    #app > .lights-head { flex: none; }
     .lights-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-    .lights-head h2 { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; }
+    .lights-head h2 { font-size: 24px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; }
     .lights-head .sub { font-size: 13px; color: var(--muted); }
     .pill-row { display: flex; gap: 8px; flex-wrap: wrap; }
     .pill {
@@ -203,10 +236,14 @@
     .pill svg { width: 20px; height: 20px; }
     .pill.icon { width: 48px; padding: 0; justify-content: center; }
 
-    .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); margin-top: 16px; }
+    .grid {
+      display: grid; gap: 12px; margin-top: 12px; flex: 1; min-height: 0; overflow-y: auto;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      grid-auto-rows: minmax(120px, 190px); align-content: start;
+    }
     .tile {
       --c: 150, 160, 180;
-      position: relative; border-radius: 24px; min-height: 150px;
+      position: relative; border-radius: 22px; min-height: 0;
       background: var(--surface); border: 1px solid var(--border);
       box-shadow: var(--shadow);
       transition: background 0.3s, border-color 0.3s, box-shadow 0.3s, transform 0.1s, opacity 0.3s;
@@ -240,6 +277,16 @@
     .tile .more svg { width: 22px; height: 22px; }
     .tile.busy .bulb { animation: pulse 0.9s ease-in-out infinite; }
     @keyframes pulse { 50% { transform: scale(0.85); opacity: 0.6; } }
+    @media (max-width: 899px), (orientation: portrait) {
+      .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); grid-auto-rows: 56px; gap: 8px; overflow: visible; }
+      .tile { min-height: 0; border-radius: 18px; }
+      .tile .hit { flex-direction: row; align-items: center; justify-content: flex-start; gap: 10px; padding: 0 34px 0 10px; }
+      .tile .bulb { width: 36px; height: 36px; flex: none; }
+      .tile .name { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .tile .info { font-size: 12px; margin-top: 0; }
+      .tile .hit > span:last-child { min-width: 0; }
+      .tile .more { top: 4px; right: 0; width: 36px; height: 48px; }
+    }
 
     /* ── bottom sheet ── */
     .backdrop {
@@ -345,13 +392,17 @@
   <div class="wrap">
     <div class="side">
       <section class="card hero">
-        <div class="time" id="time">--:--</div>
-        <div class="date" id="date"></div>
+        <div class="clock">
+          <div class="time" id="time">--:--</div>
+          <div class="date" id="date"></div>
+        </div>
+        <div class="wx">
         <div class="now" id="now"><div class="wx-empty">Loading weather…</div></div>
         <button class="place" id="place-btn">
           <svg viewBox="0 0 24 24" class="ic"><path d="M12 21s-7-6.1-7-11.5a7 7 0 0 1 14 0C19 14.9 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
           <span id="place-name">Set location</span>
         </button>
+        </div>
       </section>
 
       <section class="card radar-card" id="radar-card">
@@ -578,7 +629,7 @@ function setPlace(p) { store(PLACE_STORE, JSON.stringify(p)); $("place-name").te
 async function loadWeather() {
   const p = getPlace();
   if (!p) {
-    $("now").innerHTML = `<div class="wx-empty">Tap “Set location” below for weather and radar.</div>`;
+    $("now").innerHTML = `<div class="wx-empty">Set a location for weather and radar.</div>`;
     return;
   }
   $("place-name").textContent = p.name;
@@ -606,8 +657,8 @@ function renderWeather(w) {
     <div>
       <div class="desc">${desc}</div>
       <div class="meta">H ${Math.round(d.temperature_2m_max[0])}° · L ${Math.round(d.temperature_2m_min[0])}° · feels ${Math.round(c.apparent_temperature)}°</div>
-      <div class="meta">Wind ${Math.round(c.wind_speed_10m)} km/h · ${c.relative_humidity_2m}% humidity</div>
-      <div class="meta">Sunrise ${hhmm(d.sunrise[0])} · Sunset ${hhmm(d.sunset[0])}</div>
+      <div class="meta extra">Wind ${Math.round(c.wind_speed_10m)} km/h · ${c.relative_humidity_2m}% humidity</div>
+      <div class="meta extra">Sunrise ${hhmm(d.sunrise[0])} · Sunset ${hhmm(d.sunset[0])}</div>
     </div>`;
 }
 
