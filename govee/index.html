@@ -7,9 +7,11 @@
   <title>Lights — SKO.BG</title>
   <!--
     Govee light control, fully static (GitHub Pages). The browser calls the Govee
-    Developer API directly (it allows cross-origin calls). The API key is typed in
-    once per browser and kept only in that browser's localStorage — it is never in
-    this repo and never sent anywhere except openapi.api.govee.com.
+    Developer API directly (it allows cross-origin calls). The API key is in this
+    page only encrypted (VAULT: AES-GCM, key derived from the password with
+    PBKDF2-SHA256); the password unlocks it in the browser. Once unlocked, the key
+    is kept in that browser's localStorage and sent only to openapi.api.govee.com.
+    Change the password / key with _tools/govee_set_password.py (not published).
     Source/docs: tgt repo, Tools/Govee Lights/CLAUDE.md, spec GVL-W*.
   -->
   <style>
@@ -125,12 +127,12 @@
 
     <div id="key-card" class="card hidden">
       <div class="field">
-        <label for="key">Govee API key</label>
-        <input type="password" id="key" autocomplete="off" spellcheck="false" />
+        <label for="key">Password</label>
+        <input type="password" id="key" autocomplete="current-password" spellcheck="false" />
       </div>
-      <button class="btn-primary" id="key-btn">Connect</button>
+      <button class="btn-primary" id="key-btn">Unlock</button>
       <div class="error" id="key-error"></div>
-      <p class="hint">Stored only in this browser. Get a key in the Govee Home app: Profile → Settings → Apply for API Key.</p>
+      <p class="hint">Asked once per browser.</p>
     </div>
 
     <div id="app" class="hidden">
@@ -138,7 +140,7 @@
         <span class="note" id="note"></span>
         <div class="actions">
           <button class="btn-ghost" id="refresh-btn">Refresh</button>
-          <button class="btn-ghost" id="forget-btn">Forget key</button>
+          <button class="btn-ghost" id="forget-btn">Lock</button>
         </div>
       </div>
 
@@ -195,6 +197,8 @@
 
 <script>
 const API = "https://openapi.api.govee.com/router/api/v1";
+// Govee API key, encrypted with the page password. Written by _tools/govee_set_password.py.
+const VAULT = {"iter": 600000, "salt": "KYCtoeQzi4LHFJi85LbVuw==", "iv": "6LifNCjAyJ41BXF/", "ct": "Nmd1a5hV1hXs0PC4K0qdcbZxzFI4u/GrFRNmMd4zzUNtBHV//vj0DDyFe8WEeOZsGkcYKA=="};
 const KEY_STORE = "govee-api-key";
 const PRESETS = [
   { name: "Warm",     kelvin: 2700, dot: "#ffc27a" },
@@ -255,6 +259,20 @@ function setMsg(el, text, isErr = false) {
 }
 
 // ── key handling ──
+const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+
+async function unlock(password) {
+  if (!VAULT) throw new Error("No key stored in this page yet");
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
+  const aes = await crypto.subtle.deriveKey(
+    { name: "PBKDF2", hash: "SHA-256", salt: b64(VAULT.salt), iterations: VAULT.iter },
+    base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+  try {
+    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(VAULT.iv) }, aes, b64(VAULT.ct));
+    return new TextDecoder().decode(plain);
+  } catch { throw new Error("Wrong password"); }
+}
+
 function showKeyCard(error = "") {
   $("app").classList.add("hidden");
   $("key-card").classList.remove("hidden");
@@ -416,9 +434,12 @@ async function runAll(label, fn) {
 }
 
 // ── wire up ──
-$("key-btn").addEventListener("click", () => {
-  const k = $("key").value.trim();
-  if (k) connect(k); else $("key-error").textContent = "Enter your API key";
+$("key-btn").addEventListener("click", async () => {
+  const pw = $("key").value;
+  if (!pw) return $("key-error").textContent = "Enter the password";
+  $("key-btn").disabled = true;
+  try { connect(await unlock(pw)); }
+  catch (e) { showKeyCard(e.message); $("key-btn").disabled = false; }
 });
 $("key").addEventListener("keydown", e => { if (e.key === "Enter") $("key-btn").click(); });
 $("refresh-btn").addEventListener("click", refreshAll);
