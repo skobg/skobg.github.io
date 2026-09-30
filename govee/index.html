@@ -9,8 +9,10 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <title>Lights — SKO.BG</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!--
-    Home panel: clock, weather forecast and Govee light control. Fully static
+    Home panel: clock, weather, rain / lightning radar and Govee light control. Fully static
     (GitHub Pages). The browser calls the Govee Developer API and Open-Meteo
     directly (both allow cross-origin calls).
     The Govee API key is in this page only encrypted (VAULT: AES-GCM, key derived
@@ -19,7 +21,8 @@
     openapi.api.govee.com. Change the password / key with
     _tools/govee_set_password.py (not published).
     Weather: Open-Meteo, location from the device or picked by city, kept in
-    localStorage.
+    localStorage. Rain radar: RainViewer tiles (max native zoom 7) on an Esri Canvas
+    base map via Leaflet. Lightning: Blitzortung.org live map, embedded.
   -->
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -94,10 +97,10 @@
       .side { position: sticky; top: 20px; }
     }
     .side, .main { display: grid; gap: 20px; min-width: 0; }
-    /* phone / portrait: clock, then lights, then forecast */
+    /* phone / portrait: clock, then lights, then radar */
     @media (max-width: 959px) {
       .side { display: contents; }
-      .hero { order: 1; } .main { order: 2; } #forecast-card { order: 3; }
+      .hero { order: 1; } .main { order: 2; } #radar-card { order: 3; }
       .pill-row { width: 100%; flex-wrap: nowrap; gap: 6px; }
       .pill:not(.icon) { flex: 1; justify-content: center; padding: 0 12px; }
       .pill:not(.icon) svg { display: none; }
@@ -135,35 +138,39 @@
     .place:active { background: var(--surface-2); }
     .place svg { width: 16px; height: 16px; }
 
-    /* ── forecast ── */
-    .section-title { font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; }
-    .hourly {
-      display: flex; gap: 6px; overflow-x: auto; scroll-snap-type: x mandatory;
-      margin: 0 -8px 18px; padding: 0 8px 4px; scrollbar-width: none;
+    /* ── radar ── */
+    .section-title { font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+    .radar-card { padding: 16px; }
+    .radar-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 0 4px 12px; }
+    .tabs { display: inline-flex; background: var(--surface-2); border-radius: 999px; padding: 4px; }
+    .tabs button { height: 40px; padding: 0 18px; border-radius: 999px; font-size: 14px; font-weight: 600; color: var(--muted); }
+    .tabs button.sel { background: var(--solid); color: var(--ink); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
+    .map {
+      position: relative; isolation: isolate; overflow: hidden;
+      height: clamp(300px, 52vh, 480px); border-radius: 18px; background: var(--surface-2);
     }
-    .hourly::-webkit-scrollbar { display: none; }
-    .hour {
-      flex: none; width: 64px; scroll-snap-align: start; text-align: center;
-      padding: 10px 0; border-radius: 16px;
+    #radar-map, #lightning-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+    .map .wx-empty { padding: 16px; }
+    .radar-bar { display: flex; align-items: center; gap: 12px; margin: 10px 4px 0; }
+    .play {
+      width: 48px; height: 48px; border-radius: 50%; flex: none;
+      background: var(--accent); color: #fff; display: grid; place-items: center;
     }
-    .hour.now-h { background: var(--surface-2); }
-    .hour .h { font-size: 13px; color: var(--muted); }
-    .hour svg { width: 32px; height: 32px; margin: 6px auto; display: block; }
-    .hour .t { font-size: 16px; font-weight: 600; }
-    .hour .p { font-size: 11px; color: var(--accent); min-height: 14px; }
-
-    .daily { display: grid; gap: 2px; }
-    .day { display: grid; grid-template-columns: 56px 32px 40px 36px 1fr 36px; align-items: center; gap: 8px; min-height: 48px; }
-    .day .dn { font-size: 15px; font-weight: 500; }
-    .day svg { width: 28px; height: 28px; }
-    .day .dp { font-size: 12px; color: var(--accent); }
-    .day .lo { font-size: 15px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
-    .day .hi { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
-    .range { position: relative; height: 6px; border-radius: 999px; background: var(--track); }
-    .range i {
-      position: absolute; top: 0; bottom: 0; border-radius: 999px;
-      background: linear-gradient(90deg, #6ec3ff, #ffd36e, #ff8a5c);
+    .play:active { transform: scale(0.94); }
+    .play svg { width: 22px; height: 22px; fill: currentColor; stroke: none; }
+    .radar-time { min-width: 92px; text-align: right; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .radar-time small { display: block; font-size: 11px; font-weight: 400; color: var(--muted); }
+    .legend { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); margin: 4px 4px 0; }
+    .legend i {
+      flex: 1; height: 6px; border-radius: 999px;
+      background: linear-gradient(90deg, #88ddee, #0099cc, #0077aa, #ffee00, #ffaa00, #ff4400, #c10000, #ffaaff, #ff77ff);
     }
+    .leaflet-container { background: var(--surface-2); font: inherit; }
+    .leaflet-control-attribution { font-size: 10px; }
+    .leaflet-bar a { width: 40px !important; height: 40px !important; line-height: 40px !important; font-size: 20px !important; }
+    .leaflet-bar { border: 1px solid var(--border) !important; box-shadow: var(--shadow) !important; }
+    .leaflet-bar a, .leaflet-bar a:hover { background: var(--solid); color: var(--ink); border-color: var(--border); }
+    .here { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 3px solid #fff; box-shadow: 0 0 0 6px rgba(126, 166, 255, 0.3); }
     .wx-empty { color: var(--muted); font-size: 15px; padding: 8px 0; }
 
     /* ── lock ── */
@@ -347,11 +354,27 @@
         </button>
       </section>
 
-      <section class="card" id="forecast-card">
-        <div class="section-title">Next hours</div>
-        <div class="hourly" id="hourly"></div>
-        <div class="section-title">7 days</div>
-        <div class="daily" id="daily"></div>
+      <section class="card radar-card" id="radar-card">
+        <div class="radar-head">
+          <div class="section-title">Radar</div>
+          <div class="tabs" role="tablist">
+            <button id="tab-rain" class="sel" role="tab">Rain</button>
+            <button id="tab-light" role="tab">Lightning</button>
+          </div>
+        </div>
+        <div class="map">
+          <div id="radar-map"></div>
+          <iframe id="lightning-frame" class="hidden" title="Live lightning map" referrerpolicy="no-referrer"></iframe>
+        </div>
+        <div id="rain-controls">
+          <div class="radar-bar">
+            <button class="play" id="radar-play" aria-label="Play"></button>
+            <input type="range" id="radar-pos" min="0" max="0" value="0" aria-label="Radar time" />
+            <div class="radar-time" id="radar-time">–</div>
+          </div>
+          <div class="legend"><span>Light</span><i></i><span>Heavy · storm</span></div>
+        </div>
+        <div class="legend hidden" id="lightning-legend">Live strikes from Blitzortung.org, a community lightning network.</div>
       </section>
     </div>
 
@@ -550,21 +573,18 @@ function wxIcon(code, day = true) {
 }
 
 function getPlace() { try { return JSON.parse(load(PLACE_STORE)); } catch { return null; } }
-function setPlace(p) { store(PLACE_STORE, JSON.stringify(p)); $("place-name").textContent = p.name; loadWeather(); }
+function setPlace(p) { store(PLACE_STORE, JSON.stringify(p)); $("place-name").textContent = p.name; loadWeather(); centerRadar(); }
 
 async function loadWeather() {
   const p = getPlace();
   if (!p) {
-    $("now").innerHTML = `<div class="wx-empty">Tap “Set location” below for the forecast.</div>`;
-    $("forecast-card").classList.add("hidden");
+    $("now").innerHTML = `<div class="wx-empty">Tap “Set location” below for weather and radar.</div>`;
     return;
   }
   $("place-name").textContent = p.name;
   const url = "https://api.open-meteo.com/v1/forecast?latitude=" + p.lat + "&longitude=" + p.lon +
     "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day,wind_speed_10m" +
-    "&hourly=temperature_2m,weather_code,precipitation_probability,is_day" +
-    "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset" +
-    "&timezone=auto&forecast_days=7";
+    "&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset&timezone=auto&forecast_days=1";
   try {
     const r = await fetch(url);
     if (!r.ok) throw new Error(r.status);
@@ -575,7 +595,7 @@ async function loadWeather() {
 }
 
 function renderWeather(w) {
-  const c = w.current, d = w.daily, h = w.hourly;
+  const c = w.current, d = w.daily;
   const [desc] = WMO[c.weather_code] || ["—"];
   const hhmm = s => s.slice(11, 16);
   $("now").innerHTML = `
@@ -589,36 +609,6 @@ function renderWeather(w) {
       <div class="meta">Wind ${Math.round(c.wind_speed_10m)} km/h · ${c.relative_humidity_2m}% humidity</div>
       <div class="meta">Sunrise ${hhmm(d.sunrise[0])} · Sunset ${hhmm(d.sunset[0])}</div>
     </div>`;
-
-  // hourly: from the current hour on, 24 entries
-  let i0 = h.time.findIndex(t => t > c.time);
-  i0 = Math.max(0, i0 - 1);
-  const hours = [];
-  for (let i = i0; i < Math.min(h.time.length, i0 + 24); i++) {
-    const pp = h.precipitation_probability[i];
-    hours.push(`<div class="hour${i === i0 ? " now-h" : ""}">
-      <div class="h">${i === i0 ? "Now" : h.time[i].slice(11, 13)}</div>
-      ${wxIcon(h.weather_code[i], h.is_day[i])}
-      <div class="t">${Math.round(h.temperature_2m[i])}°</div>
-      <div class="p">${pp >= 20 ? pp + "%" : ""}</div></div>`);
-  }
-  $("hourly").innerHTML = hours.join("");
-
-  // daily with a min–max bar on the week's scale
-  const lo = Math.min(...d.temperature_2m_min), hi = Math.max(...d.temperature_2m_max);
-  const span = Math.max(1, hi - lo);
-  $("daily").innerHTML = d.time.map((t, i) => {
-    const name = i === 0 ? "Today" : new Date(t + "T12:00").toLocaleDateString(LOCALE, { weekday: "short" });
-    const a = (d.temperature_2m_min[i] - lo) / span * 100, b = (d.temperature_2m_max[i] - lo) / span * 100;
-    const pp = d.precipitation_probability_max[i];
-    return `<div class="day">
-      <div class="dn">${name}</div>${wxIcon(d.weather_code[i])}
-      <div class="dp">${pp >= 20 ? pp + "%" : ""}</div>
-      <div class="lo">${Math.round(d.temperature_2m_min[i])}°</div>
-      <div class="range"><i style="left:${a}%;right:${100 - b}%"></i></div>
-      <div class="hi">${Math.round(d.temperature_2m_max[i])}°</div></div>`;
-  }).join("");
-  $("forecast-card").classList.remove("hidden");
 }
 
 function useDeviceLocation(quiet) {
@@ -656,6 +646,109 @@ $("place-form").addEventListener("submit", async e => {
 
 if (getPlace()) loadWeather(); else { loadWeather(); useDeviceLocation(true); }
 setInterval(() => { if (!document.hidden) loadWeather(); }, WEATHER_POLL_MS);
+
+// ── radar (RainViewer) + lightning (Blitzortung) ──
+const RADAR_POLL_MS = 10 * 60 * 1000;   // RainViewer publishes a frame every 10 min
+const PLAY = `<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>`;
+const PAUSE = `<svg viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>`;
+const dark = matchMedia("(prefers-color-scheme: dark)");
+// Esri Canvas base + labels (no key needed); labels sit above the radar so towns stay readable.
+const esri = kind => `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_${dark.matches ? "Dark" : "Light"}_Gray_${kind}/MapServer/tile/{z}/{y}/{x}`;
+let map, base, labels, here, frames = [], layers = [], pos = 0, playTimer = null, hold = 0;
+
+function initRadar() {
+  if (!window.L) { $("radar-map").innerHTML = `<div class="wx-empty">Map not reachable.</div>`; return; }
+  const p = getPlace();
+  map = L.map("radar-map", { minZoom: 3, maxZoom: 10, zoomSnap: 0.5 })
+    .setView(p ? [p.lat, p.lon] : [50, 10], p ? 7 : 4);
+  map.createPane("labels").style.zIndex = 450;
+  map.getPane("labels").style.pointerEvents = "none";
+  base = L.tileLayer(esri("Base"), { maxZoom: 10, attribution: "Esri, HERE, Garmin, &copy; OpenStreetMap" }).addTo(map);
+  labels = L.tileLayer(esri("Reference"), { maxZoom: 10, pane: "labels" }).addTo(map);
+  dark.addEventListener("change", () => { base.setUrl(esri("Base")); labels.setUrl(esri("Reference")); });
+  centerRadar();
+  loadFrames();
+  setInterval(() => { if (!document.hidden) loadFrames(); }, RADAR_POLL_MS);
+}
+
+function centerRadar() {
+  const p = getPlace();
+  if (!map || !p) return;
+  map.setView([p.lat, p.lon], Math.max(map.getZoom(), 7));
+  if (here) here.setLatLng([p.lat, p.lon]);
+  else here = L.marker([p.lat, p.lon], {
+    icon: L.divIcon({ className: "", html: '<div class="here"></div>', iconSize: [20, 20] }), interactive: false,
+  }).addTo(map);
+  if (!$("lightning-frame").classList.contains("hidden")) showLightning();
+}
+
+async function loadFrames() {
+  let d;
+  try { d = await (await fetch("https://api.rainviewer.com/public/weather-maps.json")).json(); }
+  catch { $("radar-time").textContent = "offline"; return; }
+  const past = d.radar?.past || [];
+  if (!past.length) return;
+  layers.forEach(l => map.removeLayer(l));
+  frames = past;
+  layers = past.map(f => L.tileLayer(`${d.host}${f.path}/256/{z}/{x}/{y}/2/1_1.png`, {
+    opacity: 0, zIndex: 5, maxNativeZoom: 7, maxZoom: 10,   // RainViewer serves zoom ≤ 7 only
+    attribution: '<a href="https://www.rainviewer.com/">RainViewer</a>',
+  }).addTo(map));
+  $("radar-pos").max = frames.length - 1;
+  pos = 0;
+  showFrame(frames.length - 1);
+}
+
+function showFrame(i) {
+  if (!layers.length) return;
+  layers[pos]?.setOpacity(0);
+  pos = i;
+  layers[i].setOpacity(0.8);
+  $("radar-pos").value = i;
+  const t = new Date(frames[i].time * 1000);
+  const ago = Math.round((Date.now() - t) / 60000);
+  $("radar-time").innerHTML = t.toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit" }) +
+    `<small>${i === frames.length - 1 ? "latest" : ago + " min ago"}</small>`;
+}
+
+function setPlaying(on) {
+  clearInterval(playTimer);
+  playTimer = null;
+  $("radar-play").innerHTML = on ? PAUSE : PLAY;
+  $("radar-play").setAttribute("aria-label", on ? "Pause" : "Play");
+  if (!on) return;
+  playTimer = setInterval(() => {
+    if (pos < frames.length - 1) return showFrame(pos + 1);
+    if (++hold < 4) return;   // linger on the latest frame
+    hold = 0;
+    showFrame(0);
+  }, 500);
+}
+
+function showLightning() {
+  const p = getPlace();
+  const src = p ? `https://map.blitzortung.org/#7/${p.lat}/${p.lon}` : "https://map.blitzortung.org/#4/50/10";
+  const f = $("lightning-frame");
+  if (f.dataset.src !== src) { f.dataset.src = src; f.src = src; }
+}
+
+function selectTab(rain) {
+  $("tab-rain").classList.toggle("sel", rain);
+  $("tab-light").classList.toggle("sel", !rain);
+  $("radar-map").classList.toggle("hidden", !rain);
+  $("rain-controls").classList.toggle("hidden", !rain);
+  $("lightning-frame").classList.toggle("hidden", rain);
+  $("lightning-legend").classList.toggle("hidden", rain);
+  if (rain) map?.invalidateSize();
+  else { setPlaying(false); showLightning(); }
+}
+
+$("tab-rain").addEventListener("click", () => selectTab(true));
+$("tab-light").addEventListener("click", () => selectTab(false));
+$("radar-play").addEventListener("click", () => setPlaying(!playTimer));
+$("radar-pos").addEventListener("input", e => { setPlaying(false); showFrame(+e.target.value); });
+setPlaying(false);
+initRadar();
 
 // ── Govee API ──
 class ApiError extends Error {
@@ -831,7 +924,7 @@ $("refresh-btn").addEventListener("click", refreshAll);
 setInterval(() => { if (apiKey && !document.hidden) refreshAll(); }, LIGHT_POLL_MS);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden && apiKey && Date.now() - lastLightRefresh > 60000) refreshAll();
-  if (!document.hidden) loadWeather();
+  if (!document.hidden) { loadWeather(); if (map) loadFrames(); }
 });
 
 // ── commands ──
