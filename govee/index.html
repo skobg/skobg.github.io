@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Lights — SKO.BG</title>
+  <!--
+    Govee light control, fully static (GitHub Pages). The browser calls the Govee
+    Developer API directly (it allows cross-origin calls). The API key is typed in
+    once per browser and kept only in that browser's localStorage — it is never in
+    this repo and never sent anywhere except openapi.api.govee.com.
+    Source/docs: tgt repo, Tools/Govee Lights/CLAUDE.md, spec GVL-W*.
+  -->
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #f7f6f3;
+      --surface:  #ffffff;
+      --ink:      #111111;
+      --muted:    #6b6b6b;
+      --rule:     #e0ddd8;
+      --accent:   #0d2b52;
+      --accent-h: #1a4a8a;
+      --on:       #1a7a42;
+      --off:      #99231f;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, "Segoe UI", Helvetica Neue, Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: clamp(20px, 5vw, 60px) 16px;
+    }
+
+    .wrap { width: 100%; max-width: 560px; }
+
+    header { margin-bottom: 28px; text-align: center; }
+    .wordmark { font-size: 14px; font-weight: 700; letter-spacing: 0.12em; color: var(--accent); }
+    h1 { font-size: 22px; margin-top: 6px; }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--rule);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .card.offline { opacity: 0.6; }
+
+    .field { margin-bottom: 14px; }
+    label, .label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+    input[type="password"] {
+      width: 100%; padding: 10px 12px; font-size: 16px;
+      border: 1px solid var(--rule); border-radius: 8px; background: var(--bg); color: var(--ink);
+    }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 10px; }
+
+    button {
+      font-family: inherit; font-size: 15px; font-weight: 600;
+      border: none; border-radius: 8px; padding: 10px 16px; cursor: pointer;
+      transition: background 0.15s;
+    }
+    button:disabled { opacity: 0.5; cursor: wait; }
+    .btn-primary { background: var(--accent); color: #fff; width: 100%; }
+    .btn-primary:hover { background: var(--accent-h); }
+    .btn-on  { background: var(--on);  color: #fff; }
+    .btn-off { background: var(--off); color: #fff; }
+    .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--rule); }
+    .error { color: var(--off); font-size: 13px; margin-top: 10px; min-height: 1em; }
+
+    .topbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 16px; }
+    .topbar .actions { display: flex; gap: 8px; }
+    .note { font-size: 12px; color: var(--muted); }
+
+    .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+    .device-name { font-size: 16px; font-weight: 700; }
+    .device-model { font-size: 12px; color: var(--muted); }
+    .badge {
+      font-size: 12px; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap;
+      padding: 3px 10px; border-radius: 999px; color: #fff; background: var(--muted);
+    }
+    .badge.on  { background: var(--on); }
+    .badge.off { background: var(--off); }
+    .swatch {
+      display: inline-block; width: 14px; height: 14px; border-radius: 50%;
+      border: 1px solid var(--rule); vertical-align: -2px; margin-right: 6px;
+    }
+    .state { font-size: 13px; color: var(--muted); margin-bottom: 14px; }
+
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+    .row:last-child { margin-bottom: 0; }
+    .row .label { margin: 0; width: 86px; flex: none; }
+    input[type="range"] { flex: 1; min-width: 140px; accent-color: var(--accent); height: 28px; }
+    input[type="color"] {
+      width: 44px; height: 36px; padding: 2px; border: 1px solid var(--rule);
+      border-radius: 8px; background: var(--surface); cursor: pointer;
+    }
+    .val { font-size: 13px; font-variant-numeric: tabular-nums; width: 52px; text-align: right; flex: none; }
+    .presets { display: flex; gap: 6px; flex-wrap: wrap; }
+    .preset {
+      font-size: 12px; padding: 6px 10px; border-radius: 999px;
+      background: var(--bg); color: var(--ink); border: 1px solid var(--rule);
+    }
+    .preset i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+    .msg { font-size: 12px; margin-top: 10px; min-height: 1em; color: var(--muted); }
+    .msg.err { color: var(--off); }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="wordmark">SKO.BG</div>
+      <h1>Lights</h1>
+    </header>
+
+    <div id="key-card" class="card hidden">
+      <div class="field">
+        <label for="key">Govee API key</label>
+        <input type="password" id="key" autocomplete="off" spellcheck="false" />
+      </div>
+      <button class="btn-primary" id="key-btn">Connect</button>
+      <div class="error" id="key-error"></div>
+      <p class="hint">Stored only in this browser. Get a key in the Govee Home app: Profile → Settings → Apply for API Key.</p>
+    </div>
+
+    <div id="app" class="hidden">
+      <div class="topbar">
+        <span class="note" id="note"></span>
+        <div class="actions">
+          <button class="btn-ghost" id="refresh-btn">Refresh</button>
+          <button class="btn-ghost" id="forget-btn">Forget key</button>
+        </div>
+      </div>
+
+      <div class="card" id="all-card">
+        <div class="head">
+          <div><div class="device-name">All lights</div><div class="device-model" id="all-count"></div></div>
+        </div>
+        <div class="row">
+          <button class="btn-on" data-all="on">All on</button>
+          <button class="btn-off" data-all="off">All off</button>
+        </div>
+        <div class="row">
+          <span class="label">Brightness</span>
+          <input type="range" min="1" max="100" value="100" id="all-bright" />
+          <span class="val" id="all-bright-val">100 %</span>
+        </div>
+        <div class="row presets" id="all-presets"></div>
+        <div class="msg" id="all-msg"></div>
+      </div>
+
+      <div id="lights"></div>
+    </div>
+  </div>
+
+  <template id="light-tpl">
+    <div class="card light">
+      <div class="head">
+        <div><div class="device-name"></div><div class="device-model"></div></div>
+        <span class="badge">…</span>
+      </div>
+      <div class="state"></div>
+      <div class="row">
+        <button class="btn-on" data-act="on">On</button>
+        <button class="btn-off" data-act="off">Off</button>
+      </div>
+      <div class="row" data-cap="brightness">
+        <span class="label">Brightness</span>
+        <input type="range" min="1" max="100" value="100" data-act="brightness" />
+        <span class="val" data-val="brightness">–</span>
+      </div>
+      <div class="row" data-cap="colorRgb">
+        <span class="label">Colour</span>
+        <input type="color" value="#ffffff" data-act="color" />
+      </div>
+      <div class="row" data-cap="colorTemperatureK">
+        <span class="label">White</span>
+        <input type="range" min="2000" max="9000" step="100" value="4000" data-act="kelvin" />
+        <span class="val" data-val="kelvin">–</span>
+      </div>
+      <div class="row presets" data-cap="colorRgb"></div>
+      <div class="msg"></div>
+    </div>
+  </template>
+
+<script>
+const API = "https://openapi.api.govee.com/router/api/v1";
+const KEY_STORE = "govee-api-key";
+const PRESETS = [
+  { name: "Warm",     kelvin: 2700, dot: "#ffc27a" },
+  { name: "Daylight", kelvin: 5600, dot: "#f4f6ff" },
+  { name: "Red",      rgb: [255, 0, 0] },
+  { name: "Green",    rgb: [0, 255, 0] },
+  { name: "Blue",     rgb: [0, 0, 255] },
+  { name: "Purple",   rgb: [160, 0, 255] },
+  { name: "Orange",   rgb: [255, 100, 0] },
+];
+const CAP = {
+  power:  ["devices.capabilities.on_off", "powerSwitch"],
+  bright: ["devices.capabilities.range", "brightness"],
+  rgb:    ["devices.capabilities.color_setting", "colorRgb"],
+  kelvin: ["devices.capabilities.color_setting", "colorTemperatureK"],
+};
+
+const $ = id => document.getElementById(id);
+let apiKey = null;
+let lights = [];   // {sku, device, name, isGroup, caps:Set, kmin, kmax, el}
+
+// localStorage can throw (private mode, blocked site data) — the page must still work.
+function loadKey() { try { return localStorage.getItem(KEY_STORE); } catch { return null; } }
+function saveKey(k) { try { localStorage.setItem(KEY_STORE, k); } catch {} }
+function dropKey() { try { localStorage.removeItem(KEY_STORE); } catch {} }
+
+class ApiError extends Error {
+  constructor(message, status) { super(message); this.status = status; }
+}
+
+async function api(method, path, payload) {
+  const opts = { method, headers: { "Govee-API-Key": apiKey, "Content-Type": "application/json" } };
+  if (payload) opts.body = JSON.stringify({ requestId: crypto.randomUUID(), payload });
+  let resp;
+  try { resp = await fetch(API + path, opts); }
+  catch { throw new ApiError("Network error — Govee not reachable", 0); }
+  if (resp.status === 401) throw new ApiError("API key rejected", 401);
+  if (resp.status === 429) throw new ApiError("Govee rate limit reached — wait a minute", 429);
+  let data = {};
+  try { data = await resp.json(); } catch {}
+  if (!resp.ok || (data.code !== undefined && data.code !== 200)) {
+    throw new ApiError(`Govee error ${data.code ?? resp.status}: ${data.msg || data.message || resp.statusText}`, resp.status);
+  }
+  return data;
+}
+
+const hex = ([r, g, b]) => "#" + [r, g, b].map(v => v.toString(16).padStart(2, "0")).join("");
+const rgbInt = ([r, g, b]) => (r << 16) | (g << 8) | b;
+const fromHex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+
+function control(light, [type, instance], value) {
+  return api("POST", "/device/control", { sku: light.sku, device: light.device, capability: { type, instance, value } });
+}
+
+function setMsg(el, text, isErr = false) {
+  el.textContent = text;
+  el.classList.toggle("err", isErr);
+}
+
+// ── key handling ──
+function showKeyCard(error = "") {
+  $("app").classList.add("hidden");
+  $("key-card").classList.remove("hidden");
+  $("key-error").textContent = error;
+}
+
+async function connect(key) {
+  apiKey = key;
+  $("key-btn").disabled = true;
+  $("key-error").textContent = "";
+  try {
+    const data = await api("GET", "/user/devices");
+    saveKey(key);
+    buildLights(data.data || []);
+    $("key-card").classList.add("hidden");
+    $("app").classList.remove("hidden");
+    refreshAll();
+  } catch (e) {
+    if (e.status === 401) dropKey();
+    showKeyCard(e.message);
+  } finally {
+    $("key-btn").disabled = false;
+  }
+}
+
+// ── build UI ──
+function presetButtons(container, onPick) {
+  for (const p of PRESETS) {
+    const b = document.createElement("button");
+    b.className = "preset";
+    b.innerHTML = `<i style="background:${p.dot || hex(p.rgb)}"></i>`;
+    b.append(p.name);
+    b.addEventListener("click", () => onPick(p));
+    container.append(b);
+  }
+}
+
+function buildLights(devices) {
+  const list = $("lights");
+  list.innerHTML = "";
+  lights = devices.filter(d => d.sku && d.device).map(d => {
+    const caps = new Set((d.capabilities || []).map(c => c.instance));
+    const kcap = (d.capabilities || []).find(c => c.instance === "colorTemperatureK");
+    const range = kcap?.parameters?.range || {};
+    return {
+      sku: d.sku, device: d.device, name: d.deviceName || d.sku,
+      isGroup: !d.type, caps, kmin: range.min || 2000, kmax: range.max || 9000,
+    };
+  });
+
+  for (const light of lights) {
+    const el = $("light-tpl").content.firstElementChild.cloneNode(true);
+    light.el = el;
+    el.querySelector(".device-name").textContent = light.name;
+    el.querySelector(".device-model").textContent = light.isGroup ? "Group" : light.sku;
+    el.querySelectorAll("[data-cap]").forEach(row => {
+      if (!light.caps.has(row.dataset.cap)) row.remove();
+    });
+    const k = el.querySelector('[data-act="kelvin"]');
+    if (k) { k.min = light.kmin; k.max = light.kmax; }
+
+    el.querySelector('[data-act="on"]').addEventListener("click", () => run(light, "Turning on", () => control(light, CAP.power, 1)));
+    el.querySelector('[data-act="off"]').addEventListener("click", () => run(light, "Turning off", () => control(light, CAP.power, 0)));
+    const b = el.querySelector('[data-act="brightness"]');
+    if (b) {
+      b.addEventListener("input", () => el.querySelector('[data-val="brightness"]').textContent = b.value + " %");
+      b.addEventListener("change", () => run(light, `Brightness ${b.value} %`, () => control(light, CAP.bright, +b.value)));
+    }
+    const c = el.querySelector('[data-act="color"]');
+    if (c) c.addEventListener("change", () => run(light, `Colour ${c.value}`, () => control(light, CAP.rgb, rgbInt(fromHex(c.value)))));
+    if (k) {
+      k.addEventListener("input", () => el.querySelector('[data-val="kelvin"]').textContent = k.value + " K");
+      k.addEventListener("change", () => run(light, `White ${k.value} K`, () => control(light, CAP.kelvin, +k.value)));
+    }
+    const presets = el.querySelector(".presets");
+    if (presets) presetButtons(presets, p => run(light, p.name, () => applyPreset(light, p)));
+
+    if (light.isGroup) {
+      el.querySelector(".badge").remove();
+      el.querySelector(".state").textContent = "Govee reports no status for groups — controls still work.";
+    }
+    list.append(el);
+  }
+  $("all-count").textContent = `${lights.length} device${lights.length === 1 ? "" : "s"}`;
+}
+
+function applyPreset(light, p) {
+  if (p.kelvin) return control(light, CAP.kelvin, Math.min(light.kmax, Math.max(light.kmin, p.kelvin)));
+  return control(light, CAP.rgb, rgbInt(p.rgb));
+}
+
+// ── status ──
+async function refresh(light) {
+  if (light.isGroup) return;
+  const el = light.el;
+  try {
+    const data = await api("POST", "/device/state", { sku: light.sku, device: light.device });
+    const v = {};
+    for (const c of data.payload?.capabilities || []) v[c.instance] = c.state?.value;
+    const online = v.online !== false && v.online !== "false";
+    const on = v.powerSwitch === 1;
+    const badge = el.querySelector(".badge");
+    badge.textContent = online ? (on ? "ON" : "OFF") : "OFFLINE";
+    badge.className = "badge" + (online ? (on ? " on" : " off") : "");
+    el.classList.toggle("offline", !online);
+
+    const kelvin = +v.colorTemperatureK || 0;
+    const rgb = [(v.colorRgb >> 16) & 255, (v.colorRgb >> 8) & 255, v.colorRgb & 255];
+    const state = el.querySelector(".state");
+    state.innerHTML = "";
+    const sw = document.createElement("span");
+    sw.className = "swatch";
+    sw.style.background = kelvin ? "#fff4e0" : hex(rgb);
+    state.append(sw, kelvin ? `White ${kelvin} K` : `Colour ${hex(rgb).toUpperCase()}`,
+                 v.brightness ? ` · ${v.brightness} %` : "",
+                 online ? "" : " · cloud reports this light offline");
+
+    const b = el.querySelector('[data-act="brightness"]');
+    if (b && v.brightness) { b.value = v.brightness; el.querySelector('[data-val="brightness"]').textContent = v.brightness + " %"; }
+    const c = el.querySelector('[data-act="color"]');
+    if (c && !kelvin && v.colorRgb !== undefined) c.value = hex(rgb);
+    const k = el.querySelector('[data-act="kelvin"]');
+    if (k && kelvin) { k.value = kelvin; el.querySelector('[data-val="kelvin"]').textContent = kelvin + " K"; }
+  } catch (e) {
+    if (e.status === 401) return showKeyCard(e.message);
+    setMsg(el.querySelector(".msg"), "Status: " + e.message, true);
+  }
+}
+
+async function refreshAll() {
+  $("refresh-btn").disabled = true;
+  await Promise.all(lights.map(refresh));
+  $("refresh-btn").disabled = false;
+  $("note").textContent = "Updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+// ── commands ──
+async function run(light, label, fn) {
+  const msg = light.el.querySelector(".msg");
+  setMsg(msg, label + "…");
+  try {
+    await fn();
+    setMsg(msg, label + " ✓");
+    // The control call doesn't return the new state — read it back once applied.
+    setTimeout(() => refresh(light), 1000);
+  } catch (e) {
+    if (e.status === 401) return showKeyCard(e.message);
+    setMsg(msg, label + ": " + e.message, true);
+  }
+}
+
+async function runAll(label, fn) {
+  const msg = $("all-msg");
+  setMsg(msg, label + "…");
+  const results = await Promise.allSettled(lights.map(l => fn(l)));
+  const failed = results.map((r, i) => r.status === "rejected" ? `${lights[i].name}: ${r.reason.message}` : null).filter(Boolean);
+  setMsg(msg, failed.length ? `${label} — failed for ${failed.join("; ")}` : label + " ✓", failed.length > 0);
+  setTimeout(refreshAll, 1000);
+}
+
+// ── wire up ──
+$("key-btn").addEventListener("click", () => {
+  const k = $("key").value.trim();
+  if (k) connect(k); else $("key-error").textContent = "Enter your API key";
+});
+$("key").addEventListener("keydown", e => { if (e.key === "Enter") $("key-btn").click(); });
+$("refresh-btn").addEventListener("click", refreshAll);
+$("forget-btn").addEventListener("click", () => {
+  dropKey(); apiKey = null; $("key").value = ""; showKeyCard();
+});
+document.querySelector('[data-all="on"]').addEventListener("click", () => runAll("All on", l => control(l, CAP.power, 1)));
+document.querySelector('[data-all="off"]').addEventListener("click", () => runAll("All off", l => control(l, CAP.power, 0)));
+const allBright = $("all-bright");
+allBright.addEventListener("input", () => $("all-bright-val").textContent = allBright.value + " %");
+allBright.addEventListener("change", () => runAll(`Brightness ${allBright.value} %`,
+  l => l.caps.has("brightness") ? control(l, CAP.bright, +allBright.value) : Promise.resolve()));
+presetButtons($("all-presets"), p => runAll(p.name,
+  l => l.caps.has(p.kelvin ? "colorTemperatureK" : "colorRgb") ? applyPreset(l, p) : Promise.resolve()));
+
+const saved = loadKey();
+if (saved) connect(saved); else showKeyCard();
+</script>
+</body>
+</html>
