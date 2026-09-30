@@ -2,212 +2,458 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="robots" content="noindex, nofollow" />
+  <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#eef0f4" media="(prefers-color-scheme: light)" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <title>Lights — SKO.BG</title>
   <!--
-    Govee light control, fully static (GitHub Pages). The browser calls the Govee
-    Developer API directly (it allows cross-origin calls). The API key is in this
-    page only encrypted (VAULT: AES-GCM, key derived from the password with
-    PBKDF2-SHA256); the password unlocks it in the browser. Once unlocked, the key
-    is kept in that browser's localStorage and sent only to openapi.api.govee.com.
-    Change the password / key with _tools/govee_set_password.py (not published).
-    Source/docs: tgt repo, Tools/Govee Lights/CLAUDE.md, spec GVL-W*.
+    Home panel: clock, weather forecast and Govee light control. Fully static
+    (GitHub Pages). The browser calls the Govee Developer API and Open-Meteo
+    directly (both allow cross-origin calls).
+    The Govee API key is in this page only encrypted (VAULT: AES-GCM, key derived
+    from the password with PBKDF2-SHA256); the password unlocks it in the browser.
+    Once unlocked, the key is kept in that browser's localStorage and sent only to
+    openapi.api.govee.com. Change the password / key with
+    _tools/govee_set_password.py (not published).
+    Weather: Open-Meteo, location from the device or picked by city, kept in
+    localStorage.
   -->
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:       #f7f6f3;
-      --surface:  #ffffff;
-      --ink:      #111111;
-      --muted:    #6b6b6b;
-      --rule:     #e0ddd8;
-      --accent:   #0d2b52;
-      --accent-h: #1a4a8a;
-      --on:       #1a7a42;
-      --off:      #99231f;
+      color-scheme: dark;
+      --bg:        #0b0d12;
+      --bg-glow:   #1b2340;
+      --surface:   rgba(255, 255, 255, 0.055);
+      --surface-2: rgba(255, 255, 255, 0.10);
+      --solid:     #161a23;
+      --border:    rgba(255, 255, 255, 0.08);
+      --ink:       #f2f3f5;
+      --muted:     #9299a6;
+      --accent:    #7ea6ff;
+      --on:        #3ddc97;
+      --err:       #ff6b6b;
+      --sun:       #ffc247;
+      --track:     rgba(255, 255, 255, 0.14);
+      --shadow:    0 10px 40px -12px rgba(0, 0, 0, 0.6);
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        color-scheme: light;
+        --bg:        #eef0f4;
+        --bg-glow:   #d9e2ff;
+        --surface:   rgba(255, 255, 255, 0.75);
+        --surface-2: rgba(255, 255, 255, 1);
+        --solid:     #ffffff;
+        --border:    rgba(15, 20, 35, 0.08);
+        --ink:       #12151c;
+        --muted:     #626a78;
+        --accent:    #2f5fe0;
+        --on:        #12a36a;
+        --err:       #d23b3b;
+        --sun:       #f0a500;
+        --track:     rgba(15, 20, 35, 0.12);
+        --shadow:    0 10px 30px -14px rgba(20, 30, 60, 0.25);
+      }
     }
 
+    html { -webkit-text-size-adjust: 100%; }
     body {
-      background: var(--bg);
+      background: radial-gradient(1200px 700px at 15% -10%, var(--bg-glow), transparent 60%), var(--bg);
+      background-attachment: fixed;
       color: var(--ink);
-      font-family: -apple-system, "Segoe UI", Helvetica Neue, Arial, sans-serif;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       font-size: 16px;
-      line-height: 1.5;
+      line-height: 1.4;
       -webkit-font-smoothing: antialiased;
       min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: clamp(20px, 5vw, 60px) 16px;
+      padding: max(20px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+               max(28px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+      -webkit-user-select: none; user-select: none;
     }
-
-    .wrap { width: 100%; max-width: 560px; }
-
-    header { margin-bottom: 28px; text-align: center; }
-    .wordmark { font-size: 14px; font-weight: 700; letter-spacing: 0.12em; color: var(--accent); }
-    h1 { font-size: 22px; margin-top: 6px; }
-
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--rule);
-      border-radius: 12px;
-      padding: 20px;
-      margin-bottom: 16px;
-    }
-    .card.offline { opacity: 0.6; }
-
-    .field { margin-bottom: 14px; }
-    label, .label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
-    input[type="password"] {
-      width: 100%; padding: 10px 12px; font-size: 16px;
-      border: 1px solid var(--rule); border-radius: 8px; background: var(--bg); color: var(--ink);
-    }
-    .hint { font-size: 12px; color: var(--muted); margin-top: 10px; }
+    input { -webkit-user-select: text; user-select: text; }
 
     button {
-      font-family: inherit; font-size: 15px; font-weight: 600;
-      border: none; border-radius: 8px; padding: 10px 16px; cursor: pointer;
-      transition: background 0.15s;
+      font: inherit; color: inherit; border: none; background: none; cursor: pointer;
+      touch-action: manipulation; -webkit-tap-highlight-color: transparent;
     }
-    button:disabled { opacity: 0.5; cursor: wait; }
-    .btn-primary { background: var(--accent); color: #fff; width: 100%; }
-    .btn-primary:hover { background: var(--accent-h); }
-    .btn-on  { background: var(--on);  color: #fff; }
-    .btn-off { background: var(--off); color: #fff; }
-    .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--rule); }
-    .error { color: var(--off); font-size: 13px; margin-top: 10px; min-height: 1em; }
+    button:disabled { opacity: 0.45; cursor: default; }
+    button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-    .topbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 16px; }
-    .topbar .actions { display: flex; gap: 8px; }
-    .note { font-size: 12px; color: var(--muted); }
+    .wrap {
+      max-width: 1180px; margin: 0 auto;
+      display: grid; gap: 20px;
+      grid-template-columns: minmax(0, 1fr);
+    }
+    @media (min-width: 960px) {
+      .wrap { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); align-items: start; }
+      .side { position: sticky; top: 20px; }
+    }
+    .side, .main { display: grid; gap: 20px; min-width: 0; }
+    /* phone / portrait: clock, then lights, then forecast */
+    @media (max-width: 959px) {
+      .side { display: contents; }
+      .hero { order: 1; } .main { order: 2; } #forecast-card { order: 3; }
+      .pill-row { width: 100%; flex-wrap: nowrap; gap: 6px; }
+      .pill:not(.icon) { flex: 1; justify-content: center; padding: 0 12px; }
+      .pill:not(.icon) svg { display: none; }
+    }
 
-    .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
-    .device-name { font-size: 16px; font-weight: 700; }
-    .device-model { font-size: 12px; color: var(--muted); }
-    .badge {
-      font-size: 12px; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap;
-      padding: 3px 10px; border-radius: 999px; color: #fff; background: var(--muted);
+    .card {
+      min-width: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 20px;
+      box-shadow: var(--shadow);
+      -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
     }
-    .badge.on  { background: var(--on); }
-    .badge.off { background: var(--off); }
-    .swatch {
-      display: inline-block; width: 14px; height: 14px; border-radius: 50%;
-      border: 1px solid var(--rule); vertical-align: -2px; margin-right: 6px;
-    }
-    .state { font-size: 13px; color: var(--muted); margin-bottom: 14px; }
 
-    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
-    .row:last-child { margin-bottom: 0; }
-    .row .label { margin: 0; width: 86px; flex: none; }
-    input[type="range"] { flex: 1; min-width: 140px; accent-color: var(--accent); height: 28px; }
-    input[type="color"] {
-      width: 44px; height: 36px; padding: 2px; border: 1px solid var(--rule);
-      border-radius: 8px; background: var(--surface); cursor: pointer;
+    /* ── clock + current weather ── */
+    .hero { padding: 24px; }
+    .time {
+      font-size: clamp(72px, 17vw, 128px); font-weight: 200; letter-spacing: -0.04em;
+      line-height: 0.95; font-variant-numeric: tabular-nums;
     }
-    .val { font-size: 13px; font-variant-numeric: tabular-nums; width: 52px; text-align: right; flex: none; }
-    .presets { display: flex; gap: 6px; flex-wrap: wrap; }
-    .preset {
-      font-size: 12px; padding: 6px 10px; border-radius: 999px;
-      background: var(--bg); color: var(--ink); border: 1px solid var(--rule);
+    .time .sec { font-size: 0.3em; font-weight: 300; color: var(--muted); letter-spacing: 0; margin-left: 6px; }
+    .date { font-size: 18px; color: var(--muted); margin-top: 8px; }
+
+    .now { display: flex; align-items: center; gap: 16px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); }
+    .now .big-icon { width: 72px; height: 72px; flex: none; }
+    .now .temp { font-size: 52px; font-weight: 300; letter-spacing: -0.03em; line-height: 1; }
+    .now .desc { font-size: 16px; }
+    .now .meta { font-size: 13px; color: var(--muted); margin-top: 2px; }
+    .place {
+      display: inline-flex; align-items: center; gap: 6px; margin-top: 14px;
+      font-size: 14px; color: var(--muted); padding: 8px 12px; margin-left: -12px; border-radius: 999px;
+      min-height: 40px;
     }
-    .preset i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
-    .msg { font-size: 12px; margin-top: 10px; min-height: 1em; color: var(--muted); }
-    .msg.err { color: var(--off); }
-    .hidden { display: none; }
+    .place:active { background: var(--surface-2); }
+    .place svg { width: 16px; height: 16px; }
+
+    /* ── forecast ── */
+    .section-title { font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; }
+    .hourly {
+      display: flex; gap: 6px; overflow-x: auto; scroll-snap-type: x mandatory;
+      margin: 0 -8px 18px; padding: 0 8px 4px; scrollbar-width: none;
+    }
+    .hourly::-webkit-scrollbar { display: none; }
+    .hour {
+      flex: none; width: 64px; scroll-snap-align: start; text-align: center;
+      padding: 10px 0; border-radius: 16px;
+    }
+    .hour.now-h { background: var(--surface-2); }
+    .hour .h { font-size: 13px; color: var(--muted); }
+    .hour svg { width: 32px; height: 32px; margin: 6px auto; display: block; }
+    .hour .t { font-size: 16px; font-weight: 600; }
+    .hour .p { font-size: 11px; color: var(--accent); min-height: 14px; }
+
+    .daily { display: grid; gap: 2px; }
+    .day { display: grid; grid-template-columns: 56px 32px 40px 36px 1fr 36px; align-items: center; gap: 8px; min-height: 48px; }
+    .day .dn { font-size: 15px; font-weight: 500; }
+    .day svg { width: 28px; height: 28px; }
+    .day .dp { font-size: 12px; color: var(--accent); }
+    .day .lo { font-size: 15px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+    .day .hi { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .range { position: relative; height: 6px; border-radius: 999px; background: var(--track); }
+    .range i {
+      position: absolute; top: 0; bottom: 0; border-radius: 999px;
+      background: linear-gradient(90deg, #6ec3ff, #ffd36e, #ff8a5c);
+    }
+    .wx-empty { color: var(--muted); font-size: 15px; padding: 8px 0; }
+
+    /* ── lock ── */
+    .lock { padding: 28px; }
+    .lock h2 { font-size: 22px; font-weight: 600; }
+    .lock p { color: var(--muted); font-size: 14px; margin-top: 4px; }
+    .lock form { display: grid; gap: 12px; margin-top: 20px; }
+    .input {
+      width: 100%; height: 56px; padding: 0 18px; font: inherit; font-size: 18px;
+      border-radius: 16px; border: 1px solid var(--border); background: var(--surface-2); color: var(--ink);
+    }
+    .btn-primary {
+      height: 56px; border-radius: 16px; background: var(--accent); color: #fff;
+      font-size: 17px; font-weight: 600;
+    }
+    .btn-primary:active { transform: scale(0.98); }
+    .error { color: var(--err); font-size: 14px; min-height: 1.2em; }
+
+    /* ── lights ── */
+    .lights-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .lights-head h2 { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; }
+    .lights-head .sub { font-size: 13px; color: var(--muted); }
+    .pill-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .pill {
+      height: 48px; padding: 0 18px; border-radius: 999px; font-size: 15px; font-weight: 600;
+      background: var(--surface); border: 1px solid var(--border);
+      display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+    }
+    .pill:active { transform: scale(0.96); background: var(--surface-2); }
+    .pill svg { width: 20px; height: 20px; }
+    .pill.icon { width: 48px; padding: 0; justify-content: center; }
+
+    .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); margin-top: 16px; }
+    .tile {
+      --c: 150, 160, 180;
+      position: relative; border-radius: 24px; min-height: 150px;
+      background: var(--surface); border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      transition: background 0.3s, border-color 0.3s, box-shadow 0.3s, transform 0.1s, opacity 0.3s;
+    }
+    .tile.on {
+      background: linear-gradient(160deg, rgba(var(--c), 0.34), rgba(var(--c), 0.10) 70%), var(--solid);
+      border-color: rgba(var(--c), 0.5);
+      box-shadow: 0 12px 40px -14px rgba(var(--c), 0.8);
+    }
+    .tile.offline { opacity: 0.45; }
+    .tile:active { transform: scale(0.97); }
+    .tile .hit {
+      position: absolute; inset: 0; width: 100%; text-align: left; border-radius: inherit;
+      padding: 18px; display: flex; flex-direction: column; justify-content: space-between;
+    }
+    .tile .bulb {
+      width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center;
+      background: var(--surface-2); color: var(--muted); transition: background 0.3s, color 0.3s, box-shadow 0.3s;
+    }
+    .tile .bulb svg { width: 24px; height: 24px; }
+    .tile.on .bulb { background: rgb(var(--c)); color: #111; box-shadow: 0 0 24px rgba(var(--c), 0.8); }
+    .tile .name, .tile .info { display: block; }
+    .tile .name { font-size: 16px; font-weight: 600; line-height: 1.2; padding-right: 8px; }
+    .tile .info { font-size: 13px; color: var(--muted); margin-top: 3px; }
+    .tile.on .info { color: var(--ink); opacity: 0.75; }
+    .tile .more {
+      position: absolute; top: 8px; right: 8px; width: 48px; height: 48px; border-radius: 50%;
+      display: grid; place-items: center; color: var(--muted);
+    }
+    .tile .more:active { background: var(--surface-2); }
+    .tile .more svg { width: 22px; height: 22px; }
+    .tile.busy .bulb { animation: pulse 0.9s ease-in-out infinite; }
+    @keyframes pulse { 50% { transform: scale(0.85); opacity: 0.6; } }
+
+    /* ── bottom sheet ── */
+    .backdrop {
+      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); opacity: 0; pointer-events: none;
+      transition: opacity 0.25s; z-index: 10;
+    }
+    .backdrop.open { opacity: 1; pointer-events: auto; }
+    .sheet {
+      position: fixed; left: 50%; bottom: 0; z-index: 11;
+      width: min(560px, 100%); max-height: 88vh; overflow-y: auto;
+      transform: translate(-50%, 105%); transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+      background: var(--solid); border: 1px solid var(--border); border-bottom: none;
+      border-radius: 28px 28px 0 0; padding: 12px 22px max(26px, env(safe-area-inset-bottom));
+      box-shadow: 0 -20px 60px -20px rgba(0, 0, 0, 0.5);
+    }
+    .sheet.open { transform: translate(-50%, 0); }
+    .grabber { width: 44px; height: 5px; border-radius: 999px; background: var(--track); margin: 0 auto 14px; }
+    .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+    .sheet-head h3 { font-size: 22px; font-weight: 600; }
+    .sheet-head .sub { font-size: 13px; color: var(--muted); }
+    .close { width: 48px; height: 48px; border-radius: 50%; background: var(--surface-2); display: grid; place-items: center; flex: none; }
+    .close svg { width: 20px; height: 20px; }
+
+    .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 22px; }
+    .seg button {
+      height: 60px; border-radius: 18px; font-size: 17px; font-weight: 600;
+      background: var(--surface-2); border: 1px solid var(--border);
+    }
+    .seg button:active { transform: scale(0.97); }
+    .seg button.sel-on  { background: var(--on); color: #06140d; border-color: transparent; }
+    .seg button.sel-off { background: var(--ink); color: var(--bg); border-color: transparent; }
+
+    .ctl { margin-bottom: 22px; }
+    .ctl-head { display: flex; justify-content: space-between; font-size: 14px; color: var(--muted); margin-bottom: 4px; }
+    .ctl-head b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+    input[type="range"] {
+      -webkit-appearance: none; appearance: none; width: 100%; height: 48px; background: transparent;
+      touch-action: pan-y;
+    }
+    input[type="range"]::-webkit-slider-runnable-track { height: 16px; border-radius: 999px; background: var(--track); }
+    input[type="range"]::-moz-range-track { height: 16px; border-radius: 999px; background: var(--track); }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 34px; height: 34px; margin-top: -9px; border-radius: 50%;
+      background: #fff; border: none; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 34px; height: 34px; border-radius: 50%; background: #fff; border: none;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+    }
+    input.bright::-webkit-slider-runnable-track { background: linear-gradient(90deg, #2a2d35, #fff3d6); }
+    input.bright::-moz-range-track { background: linear-gradient(90deg, #2a2d35, #fff3d6); }
+    input.kelvin::-webkit-slider-runnable-track { background: linear-gradient(90deg, #ffb46b, #fff4e5, #cfdcff); }
+    input.kelvin::-moz-range-track { background: linear-gradient(90deg, #ffb46b, #fff4e5, #cfdcff); }
+
+    .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 30px 12px; }
+    .sw {
+      aspect-ratio: 1; border-radius: 50%; position: relative;
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+    }
+    .sw:active { transform: scale(0.9); }
+    .sw span {
+      position: absolute; left: 50%; bottom: -18px; transform: translateX(-50%);
+      font-size: 11px; color: var(--muted); white-space: nowrap;
+    }
+    .swatches { padding-bottom: 18px; }
+    .sw.custom { background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red); overflow: hidden; }
+    .sw.custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+    .note { font-size: 14px; color: var(--muted); margin-bottom: 18px; }
+
+    /* place picker */
+    .results { display: grid; gap: 8px; margin-top: 12px; }
+    .result {
+      text-align: left; min-height: 56px; padding: 10px 16px; border-radius: 16px;
+      background: var(--surface-2); border: 1px solid var(--border);
+    }
+    .result small { display: block; color: var(--muted); font-size: 12px; }
+    .result:active { transform: scale(0.98); }
+    .row2 { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
+    .btn-sec { height: 56px; padding: 0 20px; border-radius: 16px; background: var(--surface-2); border: 1px solid var(--border); font-weight: 600; }
+
+    /* toast */
+    .toast {
+      position: fixed; left: 50%; bottom: max(24px, env(safe-area-inset-bottom)); z-index: 20;
+      transform: translate(-50%, 140%); transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0.3s;
+      visibility: hidden; max-width: calc(100% - 32px); padding: 14px 20px; border-radius: 18px;
+      background: var(--ink); color: var(--bg); font-size: 15px; font-weight: 500;
+      box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.5);
+    }
+    .toast.show { transform: translate(-50%, 0); visibility: visible; }
+    .toast.err { background: var(--err); color: #fff; }
+
+    .hidden { display: none !important; }
+
+    .ic { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+    .ic .sun { stroke: var(--sun); }
+    .ic .sunfill { fill: var(--sun); stroke: var(--sun); }
+    .ic .drop { stroke: var(--accent); }
+    .ic .bolt { stroke: var(--sun); fill: var(--sun); }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <header>
-      <div class="wordmark">SKO.BG</div>
-      <h1>Lights</h1>
-    </header>
+    <div class="side">
+      <section class="card hero">
+        <div class="time" id="time">--:--</div>
+        <div class="date" id="date"></div>
+        <div class="now" id="now"><div class="wx-empty">Loading weather…</div></div>
+        <button class="place" id="place-btn">
+          <svg viewBox="0 0 24 24" class="ic"><path d="M12 21s-7-6.1-7-11.5a7 7 0 0 1 14 0C19 14.9 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
+          <span id="place-name">Set location</span>
+        </button>
+      </section>
 
-    <div id="key-card" class="card hidden">
-      <div class="field">
-        <label for="key">Password</label>
-        <input type="password" id="key" autocomplete="current-password" spellcheck="false" />
-      </div>
-      <button class="btn-primary" id="key-btn">Unlock</button>
-      <div class="error" id="key-error"></div>
-      <p class="hint">Asked once per browser.</p>
+      <section class="card" id="forecast-card">
+        <div class="section-title">Next hours</div>
+        <div class="hourly" id="hourly"></div>
+        <div class="section-title">7 days</div>
+        <div class="daily" id="daily"></div>
+      </section>
     </div>
 
-    <div id="app" class="hidden">
-      <div class="topbar">
-        <span class="note" id="note"></span>
-        <div class="actions">
-          <button class="btn-ghost" id="refresh-btn">Refresh</button>
-          <button class="btn-ghost" id="forget-btn">Lock</button>
-        </div>
-      </div>
+    <div class="main">
+      <section class="card lock hidden" id="lock">
+        <h2>Lights are locked</h2>
+        <p>Enter the password once on this device.</p>
+        <form id="lock-form" autocomplete="on">
+          <input type="text" name="username" value="sko.bg lights" autocomplete="username" class="hidden" readonly />
+          <input class="input" type="password" id="key" autocomplete="current-password" placeholder="Password" />
+          <button class="btn-primary" id="key-btn" type="submit">Unlock</button>
+          <div class="error" id="key-error"></div>
+        </form>
+      </section>
 
-      <div class="card" id="all-card">
-        <div class="head">
-          <div><div class="device-name">All lights</div><div class="device-model" id="all-count"></div></div>
+      <section id="app" class="hidden">
+        <div class="lights-head">
+          <div>
+            <h2>Lights</h2>
+            <div class="sub" id="note"></div>
+          </div>
+          <div class="pill-row">
+            <button class="pill" id="all-on">
+              <svg viewBox="0 0 24 24" class="ic"><path d="M12 3v8"/><path d="M6.3 7.3a8 8 0 1 0 11.4 0"/></svg>All on</button>
+            <button class="pill" id="all-off">All off</button>
+            <button class="pill icon" id="all-more" aria-label="All lights settings">
+              <svg viewBox="0 0 24 24" class="ic"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg></button>
+            <button class="pill icon" id="refresh-btn" aria-label="Refresh">
+              <svg viewBox="0 0 24 24" class="ic"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>
+            <button class="pill icon" id="lock-btn" aria-label="Lock">
+              <svg viewBox="0 0 24 24" class="ic"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></button>
+          </div>
         </div>
-        <div class="row">
-          <button class="btn-on" data-all="on">All on</button>
-          <button class="btn-off" data-all="off">All off</button>
-        </div>
-        <div class="row">
-          <span class="label">Brightness</span>
-          <input type="range" min="1" max="100" value="100" id="all-bright" />
-          <span class="val" id="all-bright-val">100 %</span>
-        </div>
-        <div class="row presets" id="all-presets"></div>
-        <div class="msg" id="all-msg"></div>
-      </div>
-
-      <div id="lights"></div>
+        <div class="grid" id="lights"></div>
+      </section>
     </div>
   </div>
 
-  <template id="light-tpl">
-    <div class="card light">
-      <div class="head">
-        <div><div class="device-name"></div><div class="device-model"></div></div>
-        <span class="badge">…</span>
-      </div>
-      <div class="state"></div>
-      <div class="row">
-        <button class="btn-on" data-act="on">On</button>
-        <button class="btn-off" data-act="off">Off</button>
-      </div>
-      <div class="row" data-cap="brightness">
-        <span class="label">Brightness</span>
-        <input type="range" min="1" max="100" value="100" data-act="brightness" />
-        <span class="val" data-val="brightness">–</span>
-      </div>
-      <div class="row" data-cap="colorRgb">
-        <span class="label">Colour</span>
-        <input type="color" value="#ffffff" data-act="color" />
-      </div>
-      <div class="row" data-cap="colorTemperatureK">
-        <span class="label">White</span>
-        <input type="range" min="2000" max="9000" step="100" value="4000" data-act="kelvin" />
-        <span class="val" data-val="kelvin">–</span>
-      </div>
-      <div class="row presets" data-cap="colorRgb"></div>
-      <div class="msg"></div>
+  <div class="backdrop" id="backdrop"></div>
+
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="grabber"></div>
+    <div class="sheet-head">
+      <div><h3 id="sheet-title"></h3><div class="sub" id="sheet-sub"></div></div>
+      <button class="close" data-close aria-label="Close">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
-  </template>
+    <div class="note hidden" id="sheet-note"></div>
+    <div class="seg">
+      <button id="s-on">On</button>
+      <button id="s-off">Off</button>
+    </div>
+    <div class="ctl" id="s-bright-row">
+      <div class="ctl-head"><span>Brightness</span><b id="s-bright-val">–</b></div>
+      <input type="range" class="bright" id="s-bright" min="1" max="100" value="100" />
+    </div>
+    <div class="ctl" id="s-kelvin-row">
+      <div class="ctl-head"><span>White</span><b id="s-kelvin-val">–</b></div>
+      <input type="range" class="kelvin" id="s-kelvin" min="2000" max="9000" step="100" value="4000" />
+    </div>
+    <div class="ctl" id="s-color-row">
+      <div class="ctl-head"><span>Colour</span></div>
+      <div class="swatches" id="s-swatches"></div>
+    </div>
+  </div>
+
+  <div class="sheet" id="place-sheet" role="dialog" aria-modal="true" aria-labelledby="place-title">
+    <div class="grabber"></div>
+    <div class="sheet-head">
+      <div><h3 id="place-title">Weather location</h3></div>
+      <button class="close" data-close aria-label="Close">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <form class="row2" id="place-form">
+      <input class="input" id="place-q" placeholder="City" autocomplete="off" />
+      <button class="btn-sec" type="submit">Search</button>
+    </form>
+    <div class="results" id="place-results"></div>
+    <div class="results"><button class="result" id="place-gps">Use this device's location</button></div>
+  </div>
+
+  <div class="toast" id="toast"></div>
 
 <script>
 const API = "https://openapi.api.govee.com/router/api/v1";
 // Govee API key, encrypted with the page password. Written by _tools/govee_set_password.py.
 const VAULT = {"iter": 600000, "salt": "KYCtoeQzi4LHFJi85LbVuw==", "iv": "6LifNCjAyJ41BXF/", "ct": "Nmd1a5hV1hXs0PC4K0qdcbZxzFI4u/GrFRNmMd4zzUNtBHV//vj0DDyFe8WEeOZsGkcYKA=="};
 const KEY_STORE = "govee-api-key";
+const PLACE_STORE = "weather-place";
+const LOCALE = "en-GB";
 const PRESETS = [
-  { name: "Warm",     kelvin: 2700, dot: "#ffc27a" },
-  { name: "Daylight", kelvin: 5600, dot: "#f4f6ff" },
+  { name: "Warm",     kelvin: 2700 },
+  { name: "Neutral",  kelvin: 4000 },
+  { name: "Daylight", kelvin: 6500 },
   { name: "Red",      rgb: [255, 0, 0] },
+  { name: "Orange",   rgb: [255, 100, 0] },
+  { name: "Yellow",   rgb: [255, 200, 0] },
   { name: "Green",    rgb: [0, 255, 0] },
+  { name: "Cyan",     rgb: [0, 220, 255] },
   { name: "Blue",     rgb: [0, 0, 255] },
   { name: "Purple",   rgb: [160, 0, 255] },
-  { name: "Orange",   rgb: [255, 100, 0] },
+  { name: "Pink",     rgb: [255, 0, 150] },
 ];
 const CAP = {
   power:  ["devices.capabilities.on_off", "powerSwitch"],
@@ -215,23 +461,210 @@ const CAP = {
   rgb:    ["devices.capabilities.color_setting", "colorRgb"],
   kelvin: ["devices.capabilities.color_setting", "colorTemperatureK"],
 };
+const LIGHT_POLL_MS = 3 * 60 * 1000;   // Govee allows 10 000 calls/day
+const WEATHER_POLL_MS = 15 * 60 * 1000;
 
 const $ = id => document.getElementById(id);
 let apiKey = null;
-let lights = [];   // {sku, device, name, isGroup, caps:Set, kmin, kmax, el}
+let lights = [];   // {sku, device, name, isGroup, caps:Set, kmin, kmax, el, state}
+let lastLightRefresh = 0;
 
 // localStorage can throw (private mode, blocked site data) — the page must still work.
-function loadKey() { try { return localStorage.getItem(KEY_STORE); } catch { return null; } }
-function saveKey(k) { try { localStorage.setItem(KEY_STORE, k); } catch {} }
-function dropKey() { try { localStorage.removeItem(KEY_STORE); } catch {} }
+function store(k, v) { try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} }
+function load(k) { try { return localStorage.getItem(k); } catch { return null; } }
 
+// ── small helpers ──
+const hex = ([r, g, b]) => "#" + [r, g, b].map(v => v.toString(16).padStart(2, "0")).join("");
+const rgbInt = ([r, g, b]) => (r << 16) | (g << 8) | b;
+const intRgb = n => [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+const fromHex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+function kelvinRgb(k) {   // Tanner Helland approximation, good enough for a tile tint
+  const t = k / 100;
+  const rgb = t <= 66
+    ? [255, 99.47 * Math.log(t) - 161.12, t <= 19 ? 0 : 138.52 * Math.log(t - 10) - 305.04]
+    : [329.7 * Math.pow(t - 60, -0.1332), 288.12 * Math.pow(t - 60, -0.0755), 255];
+  return rgb.map(v => Math.round(clamp(v, 0, 255)));
+}
+
+let toastTimer;
+function toast(text, isErr = false) {
+  const t = $("toast");
+  t.textContent = text;
+  t.classList.toggle("err", isErr);
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), isErr ? 5000 : 2200);
+}
+
+// ── clock ──
+function tick() {
+  const d = new Date();
+  const hm = d.toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit" });
+  const s = String(d.getSeconds()).padStart(2, "0");
+  $("time").innerHTML = `${hm}<span class="sec">${s}</span>`;
+  $("date").textContent = d.toLocaleDateString(LOCALE, { weekday: "long", day: "numeric", month: "long" });
+}
+tick();
+setInterval(tick, 1000);
+
+// ── weather (Open-Meteo) ──
+const WMO = {
+  0: ["Clear", "clear"], 1: ["Mostly clear", "clear"], 2: ["Partly cloudy", "partly"], 3: ["Overcast", "cloud"],
+  45: ["Fog", "fog"], 48: ["Freezing fog", "fog"],
+  51: ["Light drizzle", "drizzle"], 53: ["Drizzle", "drizzle"], 55: ["Heavy drizzle", "drizzle"],
+  56: ["Freezing drizzle", "drizzle"], 57: ["Freezing drizzle", "drizzle"],
+  61: ["Light rain", "rain"], 63: ["Rain", "rain"], 65: ["Heavy rain", "rain"],
+  66: ["Freezing rain", "rain"], 67: ["Freezing rain", "rain"],
+  71: ["Light snow", "snow"], 73: ["Snow", "snow"], 75: ["Heavy snow", "snow"], 77: ["Snow grains", "snow"],
+  80: ["Showers", "rain"], 81: ["Showers", "rain"], 82: ["Heavy showers", "rain"],
+  85: ["Snow showers", "snow"], 86: ["Snow showers", "snow"],
+  95: ["Thunderstorm", "thunder"], 96: ["Thunderstorm, hail", "thunder"], 99: ["Thunderstorm, hail", "thunder"],
+};
+const CLOUD = "M7 19h10a4 4 0 0 0 .6-7.95A5.5 5.5 0 0 0 7.1 10.1 4.5 4.5 0 0 0 7 19z";
+function sunSvg(cx, cy, r) {
+  let rays = "";
+  for (let a = 0; a < 360; a += 45) {
+    const c = Math.cos(a * Math.PI / 180), s = Math.sin(a * Math.PI / 180);
+    rays += `<line class="sun" x1="${cx + c * (r + 2.2)}" y1="${cy + s * (r + 2.2)}" x2="${cx + c * (r + 4)}" y2="${cy + s * (r + 4)}"/>`;
+  }
+  return `<circle class="sun" cx="${cx}" cy="${cy}" r="${r}"/>${rays}`;
+}
+const MOON = (dx = 0, dy = 0, k = 1) =>
+  `<path class="sun" transform="translate(${dx} ${dy}) scale(${k})" d="M19 14.5A7.5 7.5 0 1 1 9.5 5a6 6 0 0 0 9.5 9.5z"/>`;
+function wxIcon(code, day = true) {
+  const kind = (WMO[code] || ["", "cloud"])[1];
+  const up = `<path transform="translate(0 -3)" d="${CLOUD}"/>`;
+  let g;
+  switch (kind) {
+    case "clear":   g = day ? sunSvg(12, 12, 4.5) : MOON(); break;
+    case "partly":  g = (day ? sunSvg(8.5, 8, 3.2) : MOON(-2, -3, 0.7)) + `<path transform="translate(2 1) scale(.9)" d="${CLOUD}" fill="var(--solid)"/>`; break;
+    case "cloud":   g = `<path d="${CLOUD}"/>`; break;
+    case "fog":     g = `<path transform="translate(0 -4)" d="${CLOUD}"/><path d="M5 19h14M7 22h10"/>`; break;
+    case "drizzle": g = up + `<path class="drop" d="M9 19.5v.5M12 20.5v.5M15 19.5v.5"/>`; break;
+    case "rain":    g = up + `<path class="drop" d="M9 18.5l-1 3M13 18.5l-1 3M17 18.5l-1 3"/>`; break;
+    case "snow":    g = up + `<path class="drop" d="M9 20h.01M12 22h.01M15 20h.01M12 18.5h.01" stroke-width="2.6"/>`; break;
+    case "thunder": g = up + `<path class="bolt" d="M13 15.5l-2.5 4h3l-2 3.5" fill="none"/>`; break;
+  }
+  return `<svg viewBox="0 0 24 24" class="ic">${g}</svg>`;
+}
+
+function getPlace() { try { return JSON.parse(load(PLACE_STORE)); } catch { return null; } }
+function setPlace(p) { store(PLACE_STORE, JSON.stringify(p)); $("place-name").textContent = p.name; loadWeather(); }
+
+async function loadWeather() {
+  const p = getPlace();
+  if (!p) {
+    $("now").innerHTML = `<div class="wx-empty">Tap “Set location” below for the forecast.</div>`;
+    $("forecast-card").classList.add("hidden");
+    return;
+  }
+  $("place-name").textContent = p.name;
+  const url = "https://api.open-meteo.com/v1/forecast?latitude=" + p.lat + "&longitude=" + p.lon +
+    "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day,wind_speed_10m" +
+    "&hourly=temperature_2m,weather_code,precipitation_probability,is_day" +
+    "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset" +
+    "&timezone=auto&forecast_days=7";
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(r.status);
+    renderWeather(await r.json());
+  } catch {
+    if (!$("now").querySelector(".temp")) $("now").innerHTML = `<div class="wx-empty">Weather not reachable — retrying later.</div>`;
+  }
+}
+
+function renderWeather(w) {
+  const c = w.current, d = w.daily, h = w.hourly;
+  const [desc] = WMO[c.weather_code] || ["—"];
+  const hhmm = s => s.slice(11, 16);
+  $("now").innerHTML = `
+    <div class="big-icon">${wxIcon(c.weather_code, c.is_day)}</div>
+    <div>
+      <div class="temp">${Math.round(c.temperature_2m)}°</div>
+    </div>
+    <div>
+      <div class="desc">${desc}</div>
+      <div class="meta">H ${Math.round(d.temperature_2m_max[0])}° · L ${Math.round(d.temperature_2m_min[0])}° · feels ${Math.round(c.apparent_temperature)}°</div>
+      <div class="meta">Wind ${Math.round(c.wind_speed_10m)} km/h · ${c.relative_humidity_2m}% humidity</div>
+      <div class="meta">Sunrise ${hhmm(d.sunrise[0])} · Sunset ${hhmm(d.sunset[0])}</div>
+    </div>`;
+
+  // hourly: from the current hour on, 24 entries
+  let i0 = h.time.findIndex(t => t > c.time);
+  i0 = Math.max(0, i0 - 1);
+  const hours = [];
+  for (let i = i0; i < Math.min(h.time.length, i0 + 24); i++) {
+    const pp = h.precipitation_probability[i];
+    hours.push(`<div class="hour${i === i0 ? " now-h" : ""}">
+      <div class="h">${i === i0 ? "Now" : h.time[i].slice(11, 13)}</div>
+      ${wxIcon(h.weather_code[i], h.is_day[i])}
+      <div class="t">${Math.round(h.temperature_2m[i])}°</div>
+      <div class="p">${pp >= 20 ? pp + "%" : ""}</div></div>`);
+  }
+  $("hourly").innerHTML = hours.join("");
+
+  // daily with a min–max bar on the week's scale
+  const lo = Math.min(...d.temperature_2m_min), hi = Math.max(...d.temperature_2m_max);
+  const span = Math.max(1, hi - lo);
+  $("daily").innerHTML = d.time.map((t, i) => {
+    const name = i === 0 ? "Today" : new Date(t + "T12:00").toLocaleDateString(LOCALE, { weekday: "short" });
+    const a = (d.temperature_2m_min[i] - lo) / span * 100, b = (d.temperature_2m_max[i] - lo) / span * 100;
+    const pp = d.precipitation_probability_max[i];
+    return `<div class="day">
+      <div class="dn">${name}</div>${wxIcon(d.weather_code[i])}
+      <div class="dp">${pp >= 20 ? pp + "%" : ""}</div>
+      <div class="lo">${Math.round(d.temperature_2m_min[i])}°</div>
+      <div class="range"><i style="left:${a}%;right:${100 - b}%"></i></div>
+      <div class="hi">${Math.round(d.temperature_2m_max[i])}°</div></div>`;
+  }).join("");
+  $("forecast-card").classList.remove("hidden");
+}
+
+function useDeviceLocation(quiet) {
+  if (!navigator.geolocation) { if (!quiet) toast("This browser has no location access", true); return; }
+  navigator.geolocation.getCurrentPosition(
+    pos => { setPlace({ name: "Current location", lat: +pos.coords.latitude.toFixed(3), lon: +pos.coords.longitude.toFixed(3) }); closeSheets(); },
+    () => { if (!quiet) toast("Location not allowed — search for a city instead", true); loadWeather(); },
+    { timeout: 10000, maximumAge: 3600000 });
+}
+
+$("place-btn").addEventListener("click", () => { openSheet("place-sheet"); $("place-q").focus(); });
+$("place-gps").addEventListener("click", () => useDeviceLocation(false));
+$("place-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const q = $("place-q").value.trim();
+  if (!q) return;
+  const out = $("place-results");
+  out.innerHTML = `<div class="wx-empty">Searching…</div>`;
+  try {
+    const r = await fetch("https://geocoding-api.open-meteo.com/v1/search?count=6&language=en&name=" + encodeURIComponent(q));
+    const res = (await r.json()).results || [];
+    out.innerHTML = "";
+    if (!res.length) out.innerHTML = `<div class="wx-empty">No place found.</div>`;
+    for (const p of res) {
+      const b = document.createElement("button");
+      b.className = "result";
+      b.innerHTML = `<div></div><small></small>`;
+      b.firstChild.textContent = p.name;
+      b.lastChild.textContent = [p.admin1, p.country].filter(Boolean).join(", ");
+      b.addEventListener("click", () => { setPlace({ name: p.name, lat: p.latitude, lon: p.longitude }); closeSheets(); });
+      out.append(b);
+    }
+  } catch { out.innerHTML = `<div class="wx-empty">Search not reachable.</div>`; }
+});
+
+if (getPlace()) loadWeather(); else { loadWeather(); useDeviceLocation(true); }
+setInterval(() => { if (!document.hidden) loadWeather(); }, WEATHER_POLL_MS);
+
+// ── Govee API ──
 class ApiError extends Error {
   constructor(message, status) { super(message); this.status = status; }
 }
 
 async function api(method, path, payload) {
   const opts = { method, headers: { "Govee-API-Key": apiKey, "Content-Type": "application/json" } };
-  if (payload) opts.body = JSON.stringify({ requestId: crypto.randomUUID(), payload });
+  if (payload) opts.body = JSON.stringify({ requestId: String(Date.now()) + Math.random().toString(16).slice(2), payload });
   let resp;
   try { resp = await fetch(API + path, opts); }
   catch { throw new ApiError("Network error — Govee not reachable", 0); }
@@ -240,25 +673,16 @@ async function api(method, path, payload) {
   let data = {};
   try { data = await resp.json(); } catch {}
   if (!resp.ok || (data.code !== undefined && data.code !== 200)) {
-    throw new ApiError(`Govee error ${data.code ?? resp.status}: ${data.msg || data.message || resp.statusText}`, resp.status);
+    throw new ApiError(data.msg || data.message || `Govee error ${data.code ?? resp.status}`, resp.status);
   }
   return data;
 }
-
-const hex = ([r, g, b]) => "#" + [r, g, b].map(v => v.toString(16).padStart(2, "0")).join("");
-const rgbInt = ([r, g, b]) => (r << 16) | (g << 8) | b;
-const fromHex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
 
 function control(light, [type, instance], value) {
   return api("POST", "/device/control", { sku: light.sku, device: light.device, capability: { type, instance, value } });
 }
 
-function setMsg(el, text, isErr = false) {
-  el.textContent = text;
-  el.classList.toggle("err", isErr);
-}
-
-// ── key handling ──
+// ── password / key ──
 const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 
 async function unlock(password) {
@@ -273,10 +697,11 @@ async function unlock(password) {
   } catch { throw new Error("Wrong password"); }
 }
 
-function showKeyCard(error = "") {
+function showLock(error = "") {
   $("app").classList.add("hidden");
-  $("key-card").classList.remove("hidden");
+  $("lock").classList.remove("hidden");
   $("key-error").textContent = error;
+  $("key-btn").disabled = false;
 }
 
 async function connect(key) {
@@ -285,30 +710,33 @@ async function connect(key) {
   $("key-error").textContent = "";
   try {
     const data = await api("GET", "/user/devices");
-    saveKey(key);
+    store(KEY_STORE, key);
     buildLights(data.data || []);
-    $("key-card").classList.add("hidden");
+    $("lock").classList.add("hidden");
     $("app").classList.remove("hidden");
     refreshAll();
   } catch (e) {
-    if (e.status === 401) dropKey();
-    showKeyCard(e.message);
-  } finally {
-    $("key-btn").disabled = false;
+    if (e.status === 401) store(KEY_STORE, null);
+    showLock(e.message);
   }
 }
 
-// ── build UI ──
-function presetButtons(container, onPick) {
-  for (const p of PRESETS) {
-    const b = document.createElement("button");
-    b.className = "preset";
-    b.innerHTML = `<i style="background:${p.dot || hex(p.rgb)}"></i>`;
-    b.append(p.name);
-    b.addEventListener("click", () => onPick(p));
-    container.append(b);
-  }
-}
+$("lock-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const pw = $("key").value;
+  if (!pw) return $("key-error").textContent = "Enter the password";
+  $("key-btn").disabled = true;
+  $("key-error").textContent = "";
+  try { await connect(await unlock(pw)); $("key").value = ""; }
+  catch (err) { showLock(err.message); }
+});
+$("lock-btn").addEventListener("click", () => {
+  store(KEY_STORE, null); apiKey = null; lights = []; $("lights").innerHTML = ""; showLock();
+});
+
+// ── light tiles ──
+const BULB = `<svg viewBox="0 0 24 24" class="ic"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1.1 2l.1.2h4.8l.1-.2c.1-.8.5-1.5 1.1-2A6 6 0 0 0 12 3z"/></svg>`;
+const DOTS = `<svg viewBox="0 0 24 24" class="ic"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>`;
 
 function buildLights(devices) {
   const list = $("lights");
@@ -319,144 +747,212 @@ function buildLights(devices) {
     const range = kcap?.parameters?.range || {};
     return {
       sku: d.sku, device: d.device, name: d.deviceName || d.sku,
-      isGroup: !d.type, caps, kmin: range.min || 2000, kmax: range.max || 9000,
+      isGroup: !d.type, caps, kmin: range.min || 2000, kmax: range.max || 9000, state: null,
     };
   });
-
   for (const light of lights) {
-    const el = $("light-tpl").content.firstElementChild.cloneNode(true);
+    const el = document.createElement("div");
+    el.className = "tile";
+    el.innerHTML = `<button class="hit"><span class="bulb">${BULB}</span>
+      <span><span class="name"></span><span class="info"></span></span></button>
+      <button class="more" aria-label="Settings">${DOTS}</button>`;
+    el.querySelector(".name").textContent = light.name;
     light.el = el;
-    el.querySelector(".device-name").textContent = light.name;
-    el.querySelector(".device-model").textContent = light.isGroup ? "Group" : light.sku;
-    el.querySelectorAll("[data-cap]").forEach(row => {
-      if (!light.caps.has(row.dataset.cap)) row.remove();
+    const hit = el.querySelector(".hit");
+    // tap toggles, long press opens the settings sheet
+    let pressTimer, longPressed = false;
+    hit.addEventListener("pointerdown", () => {
+      longPressed = false;
+      pressTimer = setTimeout(() => { longPressed = true; openLight(light); }, 500);
     });
-    const k = el.querySelector('[data-act="kelvin"]');
-    if (k) { k.min = light.kmin; k.max = light.kmax; }
-
-    el.querySelector('[data-act="on"]').addEventListener("click", () => run(light, "Turning on", () => control(light, CAP.power, 1)));
-    el.querySelector('[data-act="off"]').addEventListener("click", () => run(light, "Turning off", () => control(light, CAP.power, 0)));
-    const b = el.querySelector('[data-act="brightness"]');
-    if (b) {
-      b.addEventListener("input", () => el.querySelector('[data-val="brightness"]').textContent = b.value + " %");
-      b.addEventListener("change", () => run(light, `Brightness ${b.value} %`, () => control(light, CAP.bright, +b.value)));
-    }
-    const c = el.querySelector('[data-act="color"]');
-    if (c) c.addEventListener("change", () => run(light, `Colour ${c.value}`, () => control(light, CAP.rgb, rgbInt(fromHex(c.value)))));
-    if (k) {
-      k.addEventListener("input", () => el.querySelector('[data-val="kelvin"]').textContent = k.value + " K");
-      k.addEventListener("change", () => run(light, `White ${k.value} K`, () => control(light, CAP.kelvin, +k.value)));
-    }
-    const presets = el.querySelector(".presets");
-    if (presets) presetButtons(presets, p => run(light, p.name, () => applyPreset(light, p)));
-
-    if (light.isGroup) {
-      el.querySelector(".badge").remove();
-      el.querySelector(".state").textContent = "Govee reports no status for groups — controls still work.";
-    }
+    ["pointerup", "pointerleave", "pointercancel"].forEach(ev => hit.addEventListener(ev, () => clearTimeout(pressTimer)));
+    hit.addEventListener("contextmenu", e => e.preventDefault());
+    hit.addEventListener("click", () => { if (!longPressed) tapLight(light); });
+    el.querySelector(".more").addEventListener("click", () => openLight(light));
+    renderTile(light);
     list.append(el);
   }
-  $("all-count").textContent = `${lights.length} device${lights.length === 1 ? "" : "s"}`;
+  $("note").textContent = `${lights.length} device${lights.length === 1 ? "" : "s"}`;
 }
 
-function applyPreset(light, p) {
-  if (p.kelvin) return control(light, CAP.kelvin, Math.min(light.kmax, Math.max(light.kmin, p.kelvin)));
-  return control(light, CAP.rgb, rgbInt(p.rgb));
+function lightRgb(s) {
+  if (!s) return null;
+  if (s.kelvin) return kelvinRgb(s.kelvin);
+  if (s.rgb !== undefined) return intRgb(s.rgb);
+  return null;
 }
 
-// ── status ──
+function renderTile(light) {
+  const el = light.el, s = light.state;
+  const offline = s && !s.online;
+  el.classList.toggle("on", !!(s && s.online && s.on));
+  el.classList.toggle("offline", !!offline);
+  const c = lightRgb(s);
+  if (c) el.style.setProperty("--c", c.join(", "));
+  let info;
+  if (light.isGroup) info = "Group";
+  else if (!s) info = "…";
+  else if (offline) info = "Offline";
+  else if (!s.on) info = "Off";
+  else info = `${s.brightness ? s.brightness + " %" : "On"}${s.kelvin ? " · " + s.kelvin + " K" : ""}`;
+  el.querySelector(".info").textContent = info;
+  el.querySelector(".hit").setAttribute("aria-label", `${light.name}: ${info}. Tap to switch.`);
+}
+
 async function refresh(light) {
   if (light.isGroup) return;
-  const el = light.el;
   try {
     const data = await api("POST", "/device/state", { sku: light.sku, device: light.device });
     const v = {};
     for (const c of data.payload?.capabilities || []) v[c.instance] = c.state?.value;
-    const online = v.online !== false && v.online !== "false";
-    const on = v.powerSwitch === 1;
-    const badge = el.querySelector(".badge");
-    badge.textContent = online ? (on ? "ON" : "OFF") : "OFFLINE";
-    badge.className = "badge" + (online ? (on ? " on" : " off") : "");
-    el.classList.toggle("offline", !online);
-
-    const kelvin = +v.colorTemperatureK || 0;
-    const rgb = [(v.colorRgb >> 16) & 255, (v.colorRgb >> 8) & 255, v.colorRgb & 255];
-    const state = el.querySelector(".state");
-    state.innerHTML = "";
-    const sw = document.createElement("span");
-    sw.className = "swatch";
-    sw.style.background = kelvin ? "#fff4e0" : hex(rgb);
-    state.append(sw, kelvin ? `White ${kelvin} K` : `Colour ${hex(rgb).toUpperCase()}`,
-                 v.brightness ? ` · ${v.brightness} %` : "",
-                 online ? "" : " · cloud reports this light offline");
-
-    const b = el.querySelector('[data-act="brightness"]');
-    if (b && v.brightness) { b.value = v.brightness; el.querySelector('[data-val="brightness"]').textContent = v.brightness + " %"; }
-    const c = el.querySelector('[data-act="color"]');
-    if (c && !kelvin && v.colorRgb !== undefined) c.value = hex(rgb);
-    const k = el.querySelector('[data-act="kelvin"]');
-    if (k && kelvin) { k.value = kelvin; el.querySelector('[data-val="kelvin"]').textContent = kelvin + " K"; }
+    light.state = {
+      online: v.online !== false && v.online !== "false",
+      on: v.powerSwitch === 1,
+      brightness: +v.brightness || 0,
+      rgb: typeof v.colorRgb === "number" ? v.colorRgb : undefined,
+      kelvin: +v.colorTemperatureK || 0,
+    };
+    renderTile(light);
+    if (sheetTarget === light) renderSheet();
   } catch (e) {
-    if (e.status === 401) return showKeyCard(e.message);
-    setMsg(el.querySelector(".msg"), "Status: " + e.message, true);
+    if (e.status === 401) showLock(e.message);
   }
 }
 
 async function refreshAll() {
   $("refresh-btn").disabled = true;
   await Promise.all(lights.map(refresh));
+  lastLightRefresh = Date.now();
   $("refresh-btn").disabled = false;
-  $("note").textContent = "Updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  $("note").textContent = `${lights.length} devices · updated ` +
+    new Date().toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit" });
 }
+$("refresh-btn").addEventListener("click", refreshAll);
+setInterval(() => { if (apiKey && !document.hidden) refreshAll(); }, LIGHT_POLL_MS);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && apiKey && Date.now() - lastLightRefresh > 60000) refreshAll();
+  if (!document.hidden) loadWeather();
+});
 
 // ── commands ──
-async function run(light, label, fn) {
-  const msg = light.el.querySelector(".msg");
-  setMsg(msg, label + "…");
-  try {
-    await fn();
-    setMsg(msg, label + " ✓");
-    // The control call doesn't return the new state — read it back once applied.
-    setTimeout(() => refresh(light), 1000);
-  } catch (e) {
-    if (e.status === 401) return showKeyCard(e.message);
-    setMsg(msg, label + ": " + e.message, true);
+// act() sends one capability to every target that supports it, shows a toast,
+// updates tiles right away and reads the real state back a moment later.
+async function act(targets, label, make) {
+  const skipped = targets.filter(l => l.state && !l.state.online);
+  const jobs = targets.filter(l => !skipped.includes(l)).map(l => ({ l, cmd: make(l) })).filter(j => j.cmd);
+  if (!jobs.length) {
+    return toast(skipped.length ? `${skipped.map(l => l.name).join(", ")} offline — check Wi-Fi` : "Not supported by this light", true);
   }
+  jobs.forEach(j => j.l.el.classList.add("busy"));
+  const res = await Promise.allSettled(jobs.map(j => control(j.l, j.cmd.cap, j.cmd.value)));
+  const failed = [];
+  res.forEach((r, i) => {
+    const { l, cmd } = jobs[i];
+    l.el.classList.remove("busy");
+    if (r.status === "fulfilled") { l.state = { online: true, ...(l.state || {}), ...cmd.patch }; renderTile(l); }
+    else failed.push(`${l.name}: ${r.reason.message}`);
+  });
+  if (res.some(r => r.status === "rejected" && r.reason.status === 401)) return showLock("API key rejected");
+  if (sheetTarget) renderSheet();
+  if (failed.length) toast(failed.join(" · "), true);
+  else toast(label + (skipped.length ? ` (${skipped.length} offline skipped)` : ""));
+  setTimeout(() => jobs.forEach(j => refresh(j.l)), 1500);
 }
 
-async function runAll(label, fn) {
-  const msg = $("all-msg");
-  setMsg(msg, label + "…");
-  const results = await Promise.allSettled(lights.map(l => fn(l)));
-  const failed = results.map((r, i) => r.status === "rejected" ? `${lights[i].name}: ${r.reason.message}` : null).filter(Boolean);
-  setMsg(msg, failed.length ? `${label} — failed for ${failed.join("; ")}` : label + " ✓", failed.length > 0);
-  setTimeout(refreshAll, 1000);
+const cmdPower  = on => l => ({ cap: CAP.power, value: on ? 1 : 0, patch: { on } });
+const cmdBright = v  => l => l.caps.has("brightness") ? { cap: CAP.bright, value: v, patch: { brightness: v, on: true } } : null;
+const cmdRgb    = c  => l => l.caps.has("colorRgb") ? { cap: CAP.rgb, value: rgbInt(c), patch: { rgb: rgbInt(c), kelvin: 0, on: true } } : null;
+const cmdKelvin = k  => l => {
+  if (!l.caps.has("colorTemperatureK")) return null;
+  const v = clamp(k, l.kmin, l.kmax);
+  return { cap: CAP.kelvin, value: v, patch: { kelvin: v, on: true } };
+};
+
+function tapLight(light) {
+  if (light.isGroup) return openLight(light);
+  const s = light.state;
+  if (!s) return toast("Still reading the light's state…");
+  if (!s.online) return toast(`${light.name} is offline — check its Wi-Fi`, true);
+  act([light], `${light.name} ${s.on ? "off" : "on"}`, cmdPower(!s.on));
 }
 
-// ── wire up ──
-$("key-btn").addEventListener("click", async () => {
-  const pw = $("key").value;
-  if (!pw) return $("key-error").textContent = "Enter the password";
-  $("key-btn").disabled = true;
-  try { connect(await unlock(pw)); }
-  catch (e) { showKeyCard(e.message); $("key-btn").disabled = false; }
-});
-$("key").addEventListener("keydown", e => { if (e.key === "Enter") $("key-btn").click(); });
-$("refresh-btn").addEventListener("click", refreshAll);
-$("forget-btn").addEventListener("click", () => {
-  dropKey(); apiKey = null; $("key").value = ""; showKeyCard();
-});
-document.querySelector('[data-all="on"]').addEventListener("click", () => runAll("All on", l => control(l, CAP.power, 1)));
-document.querySelector('[data-all="off"]').addEventListener("click", () => runAll("All off", l => control(l, CAP.power, 0)));
-const allBright = $("all-bright");
-allBright.addEventListener("input", () => $("all-bright-val").textContent = allBright.value + " %");
-allBright.addEventListener("change", () => runAll(`Brightness ${allBright.value} %`,
-  l => l.caps.has("brightness") ? control(l, CAP.bright, +allBright.value) : Promise.resolve()));
-presetButtons($("all-presets"), p => runAll(p.name,
-  l => l.caps.has(p.kelvin ? "colorTemperatureK" : "colorRgb") ? applyPreset(l, p) : Promise.resolve()));
+$("all-on").addEventListener("click", () => act(lights, "All on", cmdPower(true)));
+$("all-off").addEventListener("click", () => act(lights, "All off", cmdPower(false)));
+$("all-more").addEventListener("click", () => openLight("all"));
 
-const saved = loadKey();
-if (saved) connect(saved); else showKeyCard();
+// ── sheets ──
+let sheetTarget = null;   // a light, "all", or null
+function openSheet(id) {
+  document.querySelectorAll(".sheet").forEach(s => s.classList.toggle("open", s.id === id));
+  $("backdrop").classList.add("open");
+}
+function closeSheets() {
+  document.querySelectorAll(".sheet").forEach(s => s.classList.remove("open"));
+  $("backdrop").classList.remove("open");
+  sheetTarget = null;
+}
+$("backdrop").addEventListener("click", closeSheets);
+document.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", closeSheets));
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeSheets(); });
+
+const targets = () => sheetTarget === "all" ? lights : [sheetTarget];
+const hasCap = cap => targets().some(l => l.caps.has(cap));
+
+function openLight(t) { sheetTarget = t; renderSheet(); openSheet("sheet"); }
+
+function renderSheet() {
+  const t = sheetTarget;
+  if (!t) return;
+  const all = t === "all";
+  const s = all ? null : t.state;
+  $("sheet-title").textContent = all ? "All lights" : t.name;
+  $("sheet-sub").textContent = all ? `${lights.length} devices` : t.isGroup ? "Group" : t.sku;
+  const note = $("sheet-note");
+  note.classList.toggle("hidden", !(t.isGroup || (s && !s.online)));
+  note.textContent = t.isGroup ? "Govee reports no status for groups — the controls still work."
+                               : "The Govee cloud reports this light offline. Check its power and Wi-Fi.";
+  $("s-on").className = s && s.online && s.on ? "sel-on" : "";
+  $("s-off").className = s && s.online && !s.on ? "sel-off" : "";
+  $("s-bright-row").classList.toggle("hidden", !hasCap("brightness"));
+  $("s-kelvin-row").classList.toggle("hidden", !hasCap("colorTemperatureK"));
+  $("s-color-row").classList.toggle("hidden", !hasCap("colorRgb") && !hasCap("colorTemperatureK"));
+  const b = $("s-bright"), k = $("s-kelvin");
+  if (s && s.brightness) b.value = s.brightness;
+  $("s-bright-val").textContent = s && s.brightness ? s.brightness + " %" : "–";
+  if (!all) { k.min = t.kmin; k.max = t.kmax; }
+  if (s && s.kelvin) k.value = s.kelvin;
+  $("s-kelvin-val").textContent = s && s.kelvin ? s.kelvin + " K" : "–";
+}
+
+$("s-on").addEventListener("click", () => act(targets(), sheetTarget === "all" ? "All on" : "On", cmdPower(true)));
+$("s-off").addEventListener("click", () => act(targets(), sheetTarget === "all" ? "All off" : "Off", cmdPower(false)));
+$("s-bright").addEventListener("input", e => $("s-bright-val").textContent = e.target.value + " %");
+$("s-bright").addEventListener("change", e => act(targets(), `Brightness ${e.target.value} %`, cmdBright(+e.target.value)));
+$("s-kelvin").addEventListener("input", e => $("s-kelvin-val").textContent = e.target.value + " K");
+$("s-kelvin").addEventListener("change", e => act(targets(), `White ${e.target.value} K`, cmdKelvin(+e.target.value)));
+
+(function buildSwatches() {
+  const box = $("s-swatches");
+  for (const p of PRESETS) {
+    const b = document.createElement("button");
+    b.className = "sw";
+    b.style.background = hex(p.rgb || kelvinRgb(p.kelvin));
+    b.innerHTML = `<span></span>`;
+    b.firstChild.textContent = p.name;
+    b.setAttribute("aria-label", p.name);
+    b.addEventListener("click", () => act(targets(), p.name, p.kelvin ? cmdKelvin(p.kelvin) : cmdRgb(p.rgb)));
+    box.append(b);
+  }
+  const custom = document.createElement("label");
+  custom.className = "sw custom";
+  custom.innerHTML = `<input type="color" value="#ff8800" aria-label="Custom colour" /><span>Custom</span>`;
+  custom.querySelector("input").addEventListener("change", e => act(targets(), "Colour " + e.target.value, cmdRgb(fromHex(e.target.value))));
+  box.append(custom);
+})();
+
+// ── start ──
+const saved = load(KEY_STORE);
+if (saved) connect(saved); else showLock();
 </script>
 </body>
 </html>
