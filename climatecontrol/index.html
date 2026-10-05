@@ -61,7 +61,7 @@
     .field { margin-bottom: 14px; }
     label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
 
-    input[type="password"], input[type="number"] {
+    input[type="password"], input[type="number"], input[type="text"] {
       width: 100%;
       padding: 10px 12px;
       font-size: 16px;
@@ -166,6 +166,10 @@
     </header>
 
     <div id="login-card" class="card">
+      <div class="field">
+        <label for="username">Username</label>
+        <input type="text" id="username" autocomplete="username" autocapitalize="none" />
+      </div>
       <div class="field">
         <label for="password">Password</label>
         <input type="password" id="password" autocomplete="current-password" />
@@ -274,10 +278,11 @@
     });
 
     async function doLogin() {
+      const username = document.getElementById("username").value.trim();
       const password = document.getElementById("password").value;
       loginError.textContent = "";
       try {
-        const data = await api("/login", { method: "POST", body: JSON.stringify({ password }) });
+        const data = await api("/login", { method: "POST", body: JSON.stringify({ username, password }) });
         setToken(data.token);
         document.getElementById("password").value = "";
         showApp();
