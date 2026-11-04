@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Text from Screenshot</title>
+    <meta name="description" content="Paste a screenshot and get its text: text recognition (OCR, English and German) in your browser. Free, no login, the image never leaves your browser.">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <script>window.MINI_TOOLS_TESSERACT = 'tesseract/';</script>
+    <style>
+    :root { --text: #1f2937; --muted: #6b7280; --border: #d1d5db; --panel: #ffffff; --bg: #f3f4f6; --accent: #2563eb; }
+    @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --text: #e5e7eb; --muted: #9ca3af;
+        --border: #374151; --panel: #111827; --bg: #030712; } }
+    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--text); background: var(--bg); }
+    header { background: #101828; color: #fff; padding: 10px 16px; font-weight: 700; }
+    main.content { padding: 16px; max-width: 1100px; margin: 0 auto; }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 16px; }
+    .filters { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; align-items: flex-end; }
+    .filters > div { flex: 1; min-width: 160px; }
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+    select, textarea, input { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--border);
+        border-radius: 4px; padding: 5px 8px; box-sizing: border-box; width: 100%; }
+    button { font: inherit; padding: 6px 12px; border-radius: 4px; border: 1px solid var(--accent); background: var(--accent);
+        color: #fff; cursor: pointer; }
+    button.secondary { background: transparent; color: var(--text); border-color: var(--border); }
+    kbd { border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; font-size: 11px; }
+    footer { text-align: center; font-size: 11px; color: var(--muted); padding: 16px; }
+    footer a { color: inherit; }
+    @media (max-width: 720px) { .mt-cols { grid-template-columns: 1fr !important; } }
+    </style>
+    
+<script src="tesseract/tesseract.min.js"></script>
+<style>
+    .mt-tool { max-width: 1100px; }
+    .mt-drop { border: 2px dashed #94a3b8; border-radius: 8px; padding: 18px; text-align: center; color: var(--muted);
+               background: #f8fafc; cursor: pointer; }
+    .mt-drop.over { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; }
+    .mt-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
+    .mt-cols img { max-width: 100%; max-height: 420px; border: 1px solid var(--border); border-radius: 4px; display: block; }
+    #ocr-text { width: 100%; min-height: 300px; font-family: Consolas, monospace; font-size: 13px; box-sizing: border-box; }
+    .mt-progress { height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; margin: 6px 0; }
+    .mt-progress > span { display: block; height: 100%; width: 0; background: #2563eb; transition: width .2s; }
+    .muted { color: var(--muted); font-size: 12px; }
+</style>
+
+</head>
+<body>
+    <header>Text from Screenshot</header>
+    <main class="content">
+
+
+
+<div class="panel mt-tool" id="ocr-tool">
+    <h2>Text from screenshot</h2>
+    <p class="muted">Take a screenshot (Windows: <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>), then press <kbd>Ctrl</kbd>+<kbd>V</kbd>
+    on this page -- or drop an image here, or choose a file. The text is recognised in this browser (Tesseract); the
+    image is not sent anywhere and nothing is stored.</p>
+    <div class="filters">
+        <div style="flex:0 0 220px;"><label for="ocr-lang">Language</label>
+            <select id="ocr-lang"><option value="eng">English</option><option value="deu">German</option>
+                <option value="eng+deu" selected>English + German</option></select></div>
+        <div style="flex:0 0 260px;"><label for="ocr-layout">Layout</label>
+            <select id="ocr-layout"><option value="3">Automatic (columns, blocks)</option>
+                <option value="6">One block of text</option><option value="4">One column, lines of different size</option>
+                <option value="7">A single line</option><option value="11">Scattered text (e.g. a diagram)</option></select></div>
+        <div style="flex:0;"><input type="file" id="ocr-file" accept="image/*" hidden><button type="button" id="ocr-choose" class="secondary">Choose image…</button></div>
+    </div>
+    <div class="mt-drop" id="ocr-drop">Paste (Ctrl+V) or drop a screenshot here</div>
+    <div class="mt-progress"><span id="ocr-bar"></span></div>
+    <div class="muted" id="ocr-status">Ready.</div>
+    <div class="mt-cols">
+        <div><img id="ocr-image" alt="" hidden></div>
+        <div>
+            <textarea id="ocr-text" placeholder="The recognised text appears here -- you can edit it."></textarea>
+            <p style="margin:6px 0 0;"><button type="button" id="ocr-copy">Copy text</button>
+                <button type="button" id="ocr-join" class="secondary" title="Joins the lines of each paragraph (screenshots break lines at the window's edge); empty lines stay">Join lines</button>
+                <button type="button" id="ocr-again" class="secondary" title="Recognise the image again, e.g. with another language or layout">Recognise again</button>
+                <span class="muted" id="ocr-conf"></span></p>
+        </div>
+    </div>
+</div>
+<script src="js/mini_tools.js"></script>
+</main>
+    <footer>Text recognition with Tesseract (tesseract.js, Apache-2.0) in your browser -- nothing is uploaded or stored.
+        Version 2026.11.04 (build 161432d74260) &middot; from the Integrity Workbench Mini Tools</footer>
+</body>
+</html>
