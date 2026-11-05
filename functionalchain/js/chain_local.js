@@ -1,4 +1,4 @@
-// Functional Chain PRO max (SFM-217): the standalone's store -- the document (the same XML as the
+// Functional Chain (SFM-217): the standalone's store -- the document (the same XML as the
 // workbench's model/manual_chain.xml and Export XML) is kept in this browser's localStorage.
 // app/static/js/manual_chain.js uses window.CHAIN_STORE instead of the workbench's /api/manual-chain.
 window.CHAIN_STORE = {

@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Functional Chain PRO max — Integrity Workbench</title>
+    <title>Functional Chain — Integrity Workbench</title>
     <meta name="description" content="Draw functional chains in the browser: functions, sub-functions, flows and system borders, IDEF0-style; JPG, PNG and XML export. Free, no login, your data stays in your browser.">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="manifest" href="manifest.json">
@@ -32,7 +32,7 @@
 <script src="js/graph_export.js"></script>
 <script src="js/manual_chain.js"></script>
 <style>
-/* Manual Functional Chain (SFM-217) -- the same page is the standalone Functional Chain PRO max */
+/* Manual Functional Chain (SFM-217) -- the same page is the standalone Functional Chain */
 .app-heading { display: flex; align-items: center; gap: 8px; }
 .app-heading img { width: 1.15em; height: 1.15em; }
 .app-heading .pro { font-size: .62em; font-weight: 700; letter-spacing: .02em; color: #3c5486; align-self: flex-end; margin-bottom: .2em; }
@@ -79,7 +79,7 @@
 <body>
     <main class="content fill">
         
-<h1 class="app-heading"><img src="favicon.svg" alt="">Integrity Workbench <span class="pro">&ndash; Functional Chain PRO max</span></h1>
+<h1 class="app-heading"><img src="favicon.svg" alt="">Integrity Workbench <span class="pro">&ndash; Functional Chain</span></h1>
 
 <div class="panel fill-panel">
     <nav class="menubar" id="chain-menubar" aria-label="Functional chain menu">
@@ -141,7 +141,7 @@
 
     <dialog id="help-dialog" class="help-dialog">
         <form method="dialog">
-            <h3 style="margin-top:0;">Functional Chain PRO max &mdash; keyboard and mouse</h3>
+            <h3 style="margin-top:0;">Functional Chain &mdash; keyboard and mouse</h3>
             <p class="help-intro">Functional chains drawn by hand: a function with sub-functions is a box around them, ordered left to right by their flows; functions of one system are framed by a red dashed border. <strong>File</strong> holds several diagrams. Everything is stored in this browser only.</p>
             <table class="help-table">
                 <tr><th colspan="2">Building</th></tr>
@@ -160,7 +160,7 @@
                 <tr><th colspan="2">Files</th></tr>
                 <tr><td>File</td><td>several diagrams: new, rename, duplicate, delete; the list in the toolbar switches</td></tr>
                 <tr><td>Export JPG / PNG</td><td>the diagram as an image, everything at high resolution on white</td></tr>
-                <tr><td>Export XML / Import XML…</td><td>all diagrams as one file; an import adds its diagrams. The workbench's Manual Functional Chain and the standalone Functional Chain PRO max read each other's files</td></tr>
+                <tr><td>Export XML / Import XML…</td><td>all diagrams as one file; an import adds its diagrams. The workbench's Manual Functional Chain and the standalone Functional Chain read each other's files</td></tr>
             </table>
             <p style="margin-bottom:0; text-align:right;"><button value="close">Close</button></p>
         </form>
@@ -269,7 +269,7 @@
                 else if (published.build === mine.build) update = '<span class="ok">this is the latest published version</span>';
                 else update = `<span class="warn">a newer version is published: ${esc(label(published))}</span> `
                     + '<button type="button" id="about-reload">Reload to use it</button>';
-                dialog.innerHTML = '<form method="dialog"><h3 style="margin-top:0;">About Functional Chain PRO max</h3><table>'
+                dialog.innerHTML = '<form method="dialog"><h3 style="margin-top:0;">About Functional Chain</h3><table>'
                     + row('Version', `<b id="about-version">${esc(label(mine))}</b>`)
                     + row('Update', `<span id="about-update">${update}</span>`)
                     + row('Opened from', esc(location.href.split('?')[0]))
@@ -286,7 +286,7 @@
         if (tricks) {
             const item = document.createElement('button');
             item.type = 'button'; item.setAttribute('role', 'menuitem'); item.id = 'help-about';
-            item.textContent = 'About Functional Chain PRO max…';
+            item.textContent = 'About Functional Chain…';
             item.addEventListener('click', showAbout);
             tricks.parentElement.append(document.createElement('hr'), item);
         }
