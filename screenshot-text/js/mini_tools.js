@@ -53,6 +53,7 @@
   document.addEventListener('paste', e => {
     const t = e.target;
     if (t === ui.text) return;                                    // pasting text into the result: normal
+    if (t && t.closest && t.closest('#pcc-tool')) return;          // the PDF text cleaner's own box (SFM-290)
     const img = imageOf(e.clipboardData && e.clipboardData.items);
     if (img) { e.preventDefault(); recognise(img); }
   });
